@@ -1,26 +1,31 @@
 // Guestbook storage, v2: signatures are freehand marker strokes drawn onto
 // shared journal pages (vector points, not bitmaps — tiny to store, crisp at
 // any size, and they'll sync cleanly to a real backend later). Local-first:
-// this browser's localStorage. ALL access goes through getSignatures/
-// addSignature, so wiring the shared backend later means reimplementing just
-// these functions against a Route Handler — no UI changes.
+// this browser's localStorage. ALL access goes through these functions, so
+// wiring the shared backend later means reimplementing just this file — no
+// UI changes.
+//
+// One signature per browser: you own a single mark (getMyId), which
+// saveMySignature upserts and clearMySignature removes. Everyone else's
+// signatures are read-only.
+
+export type Point = { x: number; y: number };
 
 export type Stroke = {
   color: string;
   /** Normalized page coordinates, 0..1 on both axes. */
-  points: { x: number; y: number }[];
+  points: Point[];
 };
+
+export type SignatureText = { value: string; x: number; y: number; color: string };
 
 export type Signature = {
   id: string;
   /** Which journal page this mark lives on (0-based). */
   page: number;
   strokes: Stroke[];
-  /**
-   * Keyboard-accessible fallback: a typed name rendered in ink instead of
-   * drawn strokes. Position is the text's center, normalized.
-   */
-  text?: { value: string; x: number; y: number; color: string };
+  /** Keyboard-accessible fallback: a typed name rendered in ink. */
+  text?: SignatureText;
   /** X (Twitter) handle, stored without the leading @. Links the signature. */
   xHandle?: string;
   createdAt: number;
@@ -36,8 +41,7 @@ export const MARKER_COLORS = [
 ];
 
 const STORAGE_KEY = "classic-os:guestbook-v2";
-// Ids of signatures made from THIS browser — the ones you're allowed to
-// (re)link to an X profile by clicking them later.
+// The id of the ONE signature made from this browser — the editable one.
 const MINE_KEY = "classic-os:guestbook-mine";
 
 export function getSignatures(): Signature[] {
@@ -59,17 +63,45 @@ export function getSignatures(): Signature[] {
   return [];
 }
 
-export type AddSignatureInput = {
+/** The id of this browser's own signature, or null if it hasn't signed yet. */
+export function getMyId(): string | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = localStorage.getItem(MINE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as unknown;
+    // Migrate the old array-of-ids form → the first is now "mine".
+    if (Array.isArray(parsed)) return typeof parsed[0] === "string" ? parsed[0] : null;
+    return typeof parsed === "string" ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+/** This browser's own signature object, if it has signed. */
+export function getMySignature(): Signature | null {
+  const id = getMyId();
+  if (!id) return null;
+  return getSignatures().find((s) => s.id === id) ?? null;
+}
+
+export type SaveSignatureInput = {
   page: number;
   strokes: Stroke[];
-  text?: { value: string; x: number; y: number; color: string };
+  text?: SignatureText;
   xHandle?: string;
 };
 
-export type AddSignatureResult = { ok: true; signature: Signature } | { ok: false; error: string };
+export type SaveSignatureResult = { ok: true; signature: Signature } | { ok: false; error: string };
 
-export function addSignature(input: AddSignatureInput): AddSignatureResult {
-  const hasInk = input.strokes.some((s) => s.points.length > 1);
+/**
+ * Create or update THIS browser's single signature. Enforces one-per-browser:
+ * if a signature already exists it's replaced in place (same id/createdAt),
+ * never duplicated.
+ */
+export function saveMySignature(input: SaveSignatureInput): SaveSignatureResult {
+  const strokes = input.strokes.filter((s) => s.points.length > 1);
+  const hasInk = strokes.length > 0;
   const text = input.text?.value.trim()
     ? { ...input.text, value: input.text.value.trim().slice(0, 40) }
     : undefined;
@@ -83,64 +115,73 @@ export function addSignature(input: AddSignatureInput): AddSignatureResult {
     return { ok: false, error: "That X handle doesn't look right — letters, numbers, and _ only." };
   }
 
+  const existingId = getMyId();
+  const existing = existingId ? getSignatures().find((s) => s.id === existingId) : null;
   const signature: Signature = {
-    id: `sig-${Date.now()}-${Math.floor(Math.random() * 100000)}`,
+    id: existing?.id ?? `sig-${Date.now()}-${Math.floor(Math.random() * 100000)}`,
     page: input.page,
-    strokes: hasInk ? input.strokes : [],
+    strokes,
     text,
     xHandle,
-    createdAt: Date.now(),
+    createdAt: existing?.createdAt ?? Date.now(),
   };
 
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify([...getSignatures(), signature]));
-    localStorage.setItem(MINE_KEY, JSON.stringify([...getMyIds(), signature.id]));
+    const rest = getSignatures().filter((s) => s.id !== signature.id);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify([...rest, signature]));
+    localStorage.setItem(MINE_KEY, JSON.stringify(signature.id));
   } catch {
     return { ok: false, error: "Couldn't save your signature — storage seems to be unavailable." };
   }
   return { ok: true, signature };
 }
 
-/** Signature ids created from this browser (editable-by-me). */
-export function getMyIds(): string[] {
-  if (typeof window === "undefined") return [];
+/** Erase this browser's signature entirely, freeing it to sign again. */
+export function clearMySignature() {
+  const id = getMyId();
+  if (!id) return;
   try {
-    const raw = localStorage.getItem(MINE_KEY);
-    const parsed = raw ? (JSON.parse(raw) as unknown) : [];
-    return Array.isArray(parsed) ? parsed.filter((v): v is string => typeof v === "string") : [];
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(getSignatures().filter((s) => s.id !== id)));
+    localStorage.removeItem(MINE_KEY);
   } catch {
-    return [];
+    // Ignore storage failures.
   }
 }
 
-/** Attach, change, or (with undefined) remove the X handle on one of MY signatures. */
-export function updateSignatureHandle(
-  id: string,
-  xHandle: string | undefined,
-): { ok: true } | { ok: false; error: string } {
-  const clean = xHandle?.trim().replace(/^@/, "") || undefined;
-  if (clean && !/^\w{1,15}$/.test(clean)) {
-    return { ok: false, error: "That X handle doesn't look right — letters, numbers, and _ only." };
+/**
+ * Erase ink near a point: removes stroke points within `radius` (normalized)
+ * and splits each stroke into the contiguous segments that survive — so you
+ * rub out pieces of a signature, not whole strokes at a time.
+ */
+export function eraseAt(strokes: Stroke[], point: Point, radius: number): Stroke[] {
+  const result: Stroke[] = [];
+  for (const stroke of strokes) {
+    let run: Point[] = [];
+    for (const p of stroke.points) {
+      if (Math.hypot(p.x - point.x, p.y - point.y) <= radius) {
+        if (run.length > 1) result.push({ color: stroke.color, points: run });
+        run = [];
+      } else {
+        run.push(p);
+      }
+    }
+    if (run.length > 1) result.push({ color: stroke.color, points: run });
   }
-  if (!getMyIds().includes(id)) {
-    return { ok: false, error: "You can only link signatures you drew on this device." };
-  }
-  try {
-    const updated = getSignatures().map((s) => (s.id === id ? { ...s, xHandle: clean } : s));
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
-  } catch {
-    return { ok: false, error: "Couldn't save — storage seems to be unavailable." };
-  }
-  return { ok: true };
+  return result;
 }
 
-/** Bounding box of a signature's ink (or text anchor), normalized 0..1. */
-export function signatureBounds(signature: Signature): { x: number; y: number; w: number; h: number } {
+/** Bounding box of ink + optional text, normalized 0..1. */
+export function boundsOf(strokes: Stroke[], text?: SignatureText | null): {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+} {
   let minX = Infinity;
   let minY = Infinity;
   let maxX = -Infinity;
   let maxY = -Infinity;
-  for (const stroke of signature.strokes) {
+  for (const stroke of strokes) {
     for (const p of stroke.points) {
       minX = Math.min(minX, p.x);
       minY = Math.min(minY, p.y);
@@ -148,17 +189,41 @@ export function signatureBounds(signature: Signature): { x: number; y: number; w
       maxY = Math.max(maxY, p.y);
     }
   }
-  if (signature.text) {
-    // Approximate a text box around the anchor; exact metrics don't matter
-    // for a hover target.
-    const halfW = Math.min(0.2, signature.text.value.length * 0.012);
-    minX = Math.min(minX, signature.text.x - halfW);
-    maxX = Math.max(maxX, signature.text.x + halfW);
-    minY = Math.min(minY, signature.text.y - 0.04);
-    maxY = Math.max(maxY, signature.text.y + 0.04);
+  if (text) {
+    const halfW = Math.min(0.2, text.value.length * 0.012);
+    minX = Math.min(minX, text.x - halfW);
+    maxX = Math.max(maxX, text.x + halfW);
+    minY = Math.min(minY, text.y - 0.04);
+    maxY = Math.max(maxY, text.y + 0.04);
   }
   if (!Number.isFinite(minX)) return { x: 0, y: 0, w: 0, h: 0 };
   return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
+}
+
+export function signatureBounds(signature: Signature) {
+  return boundsOf(signature.strokes, signature.text);
+}
+
+/**
+ * Translate ink + text by (dx, dy), clamped so the whole signature stays on
+ * the page. Returns the moved copies.
+ */
+export function translateSignature(
+  strokes: Stroke[],
+  text: SignatureText | null,
+  dx: number,
+  dy: number,
+): { strokes: Stroke[]; text: SignatureText | null } {
+  const b = boundsOf(strokes, text);
+  const clampedDx = Math.max(-b.x, Math.min(1 - (b.x + b.w), dx));
+  const clampedDy = Math.max(-b.y, Math.min(1 - (b.y + b.h), dy));
+  return {
+    strokes: strokes.map((s) => ({
+      color: s.color,
+      points: s.points.map((p) => ({ x: p.x + clampedDx, y: p.y + clampedDy })),
+    })),
+    text: text ? { ...text, x: text.x + clampedDx, y: text.y + clampedDy } : null,
+  };
 }
 
 /**

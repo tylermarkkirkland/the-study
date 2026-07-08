@@ -40,14 +40,13 @@
   box-shadow: inset 14px 0 18px -12px rgba(0, 0, 0, 0.35);
 }
 
-/* The drawing surface fills its page. Crosshair only while a marker is up. */
+/* The drawing surface fills its page. Cursor is set per-tool inline. */
 .pageCanvas {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
   touch-action: none; /* let pointer strokes own the gesture on touch */
-  cursor: crosshair;
 }
 
 .pageNumber {
@@ -60,8 +59,7 @@
   pointer-events: none;
 }
 
-/* Hover/click target over a signature's ink — an <a> for others' linked
-   marks, a <button> for your own (click to edit its X link). */
+/* Hover/click target over another visitor's linked ink. */
 .signatureLink {
   position: absolute;
   border-radius: 8px;
@@ -81,11 +79,53 @@
   outline: none;
 }
 
-/* Your ink, currently being linked: stays highlighted while the link strip
-   below the book is open. */
-.signatureSelected {
-  border-color: rgba(29, 78, 216, 0.85);
-  background: rgba(29, 78, 216, 0.12);
+/* Tooltip popup shown when hovering/focusing someone's signature: their
+   @handle plus a hint that clicking opens X. */
+.tooltip {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  padding: 5px 10px;
+  border-radius: 8px;
+  background: #1c1917;
+  color: #fafaf9;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease;
+  z-index: 5;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.4);
+}
+
+/* Little arrow under the popup, pointing at the ink. */
+.tooltip::after {
+  content: "";
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 5px solid transparent;
+  border-top-color: #1c1917;
+}
+
+.signatureLink:hover .tooltip,
+.signatureLink:focus-visible .tooltip {
+  opacity: 1;
+}
+
+.tooltipHandle {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.tooltipHint {
+  font-size: 11px;
+  color: rgba(250, 250, 249, 0.6);
 }
 
 /* @handle tag revealed on hover/focus, tucked above the ink. */
