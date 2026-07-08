@@ -36,6 +36,9 @@ export const MARKER_COLORS = [
 ];
 
 const STORAGE_KEY = "classic-os:guestbook-v2";
+// Ids of signatures made from THIS browser — the ones you're allowed to
+// (re)link to an X profile by clicking them later.
+const MINE_KEY = "classic-os:guestbook-mine";
 
 export function getSignatures(): Signature[] {
   if (typeof window === "undefined") return [];
@@ -91,10 +94,44 @@ export function addSignature(input: AddSignatureInput): AddSignatureResult {
 
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify([...getSignatures(), signature]));
+    localStorage.setItem(MINE_KEY, JSON.stringify([...getMyIds(), signature.id]));
   } catch {
     return { ok: false, error: "Couldn't save your signature — storage seems to be unavailable." };
   }
   return { ok: true, signature };
+}
+
+/** Signature ids created from this browser (editable-by-me). */
+export function getMyIds(): string[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = localStorage.getItem(MINE_KEY);
+    const parsed = raw ? (JSON.parse(raw) as unknown) : [];
+    return Array.isArray(parsed) ? parsed.filter((v): v is string => typeof v === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+/** Attach, change, or (with undefined) remove the X handle on one of MY signatures. */
+export function updateSignatureHandle(
+  id: string,
+  xHandle: string | undefined,
+): { ok: true } | { ok: false; error: string } {
+  const clean = xHandle?.trim().replace(/^@/, "") || undefined;
+  if (clean && !/^\w{1,15}$/.test(clean)) {
+    return { ok: false, error: "That X handle doesn't look right — letters, numbers, and _ only." };
+  }
+  if (!getMyIds().includes(id)) {
+    return { ok: false, error: "You can only link signatures you drew on this device." };
+  }
+  try {
+    const updated = getSignatures().map((s) => (s.id === id ? { ...s, xHandle: clean } : s));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+  } catch {
+    return { ok: false, error: "Couldn't save — storage seems to be unavailable." };
+  }
+  return { ok: true };
 }
 
 /** Bounding box of a signature's ink (or text anchor), normalized 0..1. */

@@ -6,7 +6,7 @@
   display: flex;
   width: 100%;
   aspect-ratio: 3 / 2;
-  max-height: 62vh;
+  max-height: 66vh;
   border-radius: 6px 10px 10px 6px;
   box-shadow:
     0 24px 60px rgba(0, 0, 0, 0.55),
@@ -60,13 +60,15 @@
   pointer-events: none;
 }
 
-/* Hover/click target over a linked signature's ink. */
+/* Hover/click target over a signature's ink — an <a> for others' linked
+   marks, a <button> for your own (click to edit its X link). */
 .signatureLink {
   position: absolute;
   border-radius: 8px;
   border: 2px solid transparent;
   background: transparent;
   cursor: pointer;
+  padding: 0;
 }
 
 .signatureLink:hover,
@@ -77,6 +79,13 @@
 
 .signatureLink:focus-visible {
   outline: none;
+}
+
+/* Your ink, currently being linked: stays highlighted while the link strip
+   below the book is open. */
+.signatureSelected {
+  border-color: rgba(29, 78, 216, 0.85);
+  background: rgba(29, 78, 216, 0.12);
 }
 
 /* @handle tag revealed on hover/focus, tucked above the ink. */

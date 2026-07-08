@@ -4,10 +4,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   addSignature,
+  getMyIds,
   getSignatures,
   MARKER_COLORS,
   pageCount,
   signatureBounds,
+  updateSignatureHandle,
   type Signature,
   type Stroke,
 } from "@/lib/guestbook/guestbookStore";
@@ -26,11 +28,7 @@ const FOCUSABLE_SELECTOR =
 // Renders one page's ink: committed signatures plus the visitor's in-progress
 // draft. Strokes are normalized 0..1; smoothing via quadratic midpoints so
 // marker lines feel hand-drawn, not polyline-y.
-function drawPage(
-  canvas: HTMLCanvasElement,
-  committed: Signature[],
-  draft: Stroke[],
-) {
+function drawPage(canvas: HTMLCanvasElement, committed: Signature[], draft: Stroke[]) {
   const ctx = canvas.getContext("2d");
   if (!ctx) return;
   const dpr = window.devicePixelRatio || 1;
@@ -82,14 +80,25 @@ type JournalPageProps = {
   signatures: Signature[];
   draft: Stroke[];
   color: string;
+  myIds: string[];
+  selectedId: string | null;
+  onSelectMine: (signature: Signature) => void;
   onStrokeCommit: (pageIndex: number, stroke: Stroke) => void;
 };
 
-function JournalPage({ pageIndex, side, signatures, draft, color, onStrokeCommit }: JournalPageProps) {
+function JournalPage({
+  pageIndex,
+  side,
+  signatures,
+  draft,
+  color,
+  myIds,
+  selectedId,
+  onSelectMine,
+  onStrokeCommit,
+}: JournalPageProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const activeStroke = useRef<Stroke | null>(null);
-  // Live in-progress points bump this to trigger redraws without re-rendering
-  // the whole overlay per pointermove.
   const [, setTick] = useState(0);
 
   const committed = useMemo(
@@ -147,6 +156,16 @@ function JournalPage({ pageIndex, side, signatures, draft, color, onStrokeCommit
     }
   };
 
+  const boundsStyle = (s: Signature) => {
+    const b = signatureBounds(s);
+    return {
+      left: `${(b.x - 0.015) * 100}%`,
+      top: `${(b.y - 0.02) * 100}%`,
+      width: `${(b.w + 0.03) * 100}%`,
+      height: `${(b.h + 0.04) * 100}%`,
+    };
+  };
+
   return (
     <div className={`${styles.page} ${side === "left" ? styles.pageLeft : styles.pageRight}`}>
       <canvas
@@ -158,43 +177,58 @@ function JournalPage({ pageIndex, side, signatures, draft, color, onStrokeCommit
         onPointerUp={handlePointerUp}
         onPointerCancel={handlePointerUp}
       />
-      {/* Hover/click targets for signatures linked to an X profile. */}
-      {committed
-        .filter((s) => s.xHandle)
-        .map((s) => {
-          const b = signatureBounds(s);
+      {committed.map((s) => {
+        const mine = myIds.includes(s.id);
+        if (mine) {
+          // Your own ink: click to attach/edit its X link (strip under the book).
           return (
-            <a
+            <button
               key={s.id}
-              href={`https://x.com/${s.xHandle}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className={styles.signatureLink}
-              style={{
-                left: `${(b.x - 0.015) * 100}%`,
-                top: `${(b.y - 0.02) * 100}%`,
-                width: `${(b.w + 0.03) * 100}%`,
-                height: `${(b.h + 0.04) * 100}%`,
-              }}
-              aria-label={`Open @${s.xHandle} on X`}
+              type="button"
+              className={`${styles.signatureLink} ${selectedId === s.id ? styles.signatureSelected : ""}`}
+              style={boundsStyle(s)}
+              onClick={() => onSelectMine(s)}
+              aria-label={
+                s.xHandle
+                  ? `Your signature, linked to @${s.xHandle}. Edit link.`
+                  : "Your signature. Link it to your X profile."
+              }
             >
               <span className={styles.handleTag} aria-hidden="true">
-                @{s.xHandle}
+                {s.xHandle ? `@${s.xHandle} · edit` : "link to X?"}
               </span>
-            </a>
+            </button>
           );
-        })}
+        }
+        if (!s.xHandle) return null;
+        // Someone else's linked ink: hover shows who, click visits them.
+        return (
+          <a
+            key={s.id}
+            href={`https://x.com/${s.xHandle}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={styles.signatureLink}
+            style={boundsStyle(s)}
+            aria-label={`Open @${s.xHandle} on X`}
+          >
+            <span className={styles.handleTag} aria-hidden="true">
+              @{s.xHandle}
+            </span>
+          </a>
+        );
+      })}
       <span className={styles.pageNumber}>{pageIndex + 1}</span>
     </div>
   );
 }
 
-// The book on the desk: an opened journal of shared pages. Pick a marker,
-// sign anywhere with the pointer, optionally link your mark to your X
-// profile. Arrows flip through everyone else's spreads.
+// The book on the desk, frameless: just the opened journal floating over the
+// dimmed room, markers resting beside it. Draw to sign; click your own ink
+// afterwards to link it to your X profile.
 export default function GuestbookOverlay({ open, onClose }: GuestbookOverlayProps) {
   // The panel is its own component so each opening mounts it fresh: state
-  // (current spread, drafts, form fields) lazily initializes from storage
+  // (current spread, drafts, selection) lazily initializes from storage
   // instead of syncing via effects.
   return <AnimatePresence>{open ? <GuestbookPanel onClose={onClose} /> : null}</AnimatePresence>;
 }
@@ -209,6 +243,10 @@ function GuestbookPanel({ onClose }: { onClose: () => void }) {
     void entriesVersion; // referenced so the version bump invalidates the memo
     return getSignatures();
   }, [entriesVersion]);
+  const myIds = useMemo(() => {
+    void entriesVersion;
+    return getMyIds();
+  }, [entriesVersion]);
 
   const totalPages = pageCount(signatures);
   const totalSpreads = Math.ceil(totalPages / 2);
@@ -219,10 +257,14 @@ function GuestbookPanel({ onClose }: { onClose: () => void }) {
 
   const [color, setColor] = useState(MARKER_COLORS[0].value);
   const [draftByPage, setDraftByPage] = useState<Record<number, Stroke[]>>({});
-  const [xHandle, setXHandle] = useState("");
   const [typedName, setTypedName] = useState("");
+  const [showTypedInput, setShowTypedInput] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [justSigned, setJustSigned] = useState(false);
+  const [status, setStatus] = useState<string | null>(null);
+
+  // Click-your-ink link editing: which of MY signatures is being linked.
+  const [selected, setSelected] = useState<Signature | null>(null);
+  const [handleDraft, setHandleDraft] = useState("");
 
   const hasDraft = Object.values(draftByPage).some((strokes) => strokes.length > 0);
 
@@ -263,12 +305,11 @@ function GuestbookPanel({ onClose }: { onClose: () => void }) {
       ...prev,
       [pageIndex]: [...(prev[pageIndex] ?? []), stroke],
     }));
-    setJustSigned(false);
+    setStatus(null);
   }, []);
 
   const undoStroke = () => {
     setDraftByPage((prev) => {
-      // Undo the most recent stroke across the whole draft.
       let latestPage = -1;
       let latestIndex = -1;
       for (const [pageStr, strokes] of Object.entries(prev)) {
@@ -282,25 +323,22 @@ function GuestbookPanel({ onClose }: { onClose: () => void }) {
     });
   };
 
-  const clearDraft = () => setDraftByPage({});
-
   const handleSave = () => {
     setError(null);
 
     const inkedPages = Object.entries(draftByPage).filter(([, strokes]) => strokes.length > 0);
-    const handle = xHandle || undefined;
     let savedAny = false;
 
     if (inkedPages.length === 0 && typedName.trim()) {
       // Keyboard fallback: place the typed name in open space on the emptier
       // visible page (semi-random so repeat signers don't stack exactly).
       const leftCount = signatures.filter((s) => s.page === leftPage).length;
-      const page = leftCount <= signatures.filter((s) => s.page === rightPage).length ? leftPage : rightPage;
+      const page =
+        leftCount <= signatures.filter((s) => s.page === rightPage).length ? leftPage : rightPage;
       const result = addSignature({
         page,
         strokes: [],
         text: { value: typedName, x: 0.25 + Math.random() * 0.5, y: 0.15 + Math.random() * 0.65, color },
-        xHandle: handle,
       });
       if (!result.ok) {
         setError(result.error);
@@ -309,7 +347,7 @@ function GuestbookPanel({ onClose }: { onClose: () => void }) {
       savedAny = true;
     } else {
       for (const [pageStr, strokes] of inkedPages) {
-        const result = addSignature({ page: Number(pageStr), strokes, xHandle: handle });
+        const result = addSignature({ page: Number(pageStr), strokes });
         if (!result.ok) {
           setError(result.error);
           return;
@@ -319,188 +357,244 @@ function GuestbookPanel({ onClose }: { onClose: () => void }) {
     }
 
     if (!savedAny) {
-      setError("Draw your name first — or type it in the field below.");
+      setError("Draw your name on the page first — or type it instead.");
       return;
     }
 
     markFound("guestbook-sign");
     setEntriesVersion((v) => v + 1);
     setDraftByPage({});
-    setXHandle("");
     setTypedName("");
-    setJustSigned(true);
+    setShowTypedInput(false);
+    setStatus("Inked. Click your signature if you'd like to link it to your X profile.");
+  };
+
+  const selectMine = (signature: Signature) => {
+    setSelected(signature);
+    setHandleDraft(signature.xHandle ? `@${signature.xHandle}` : "");
+    setStatus(null);
+    setError(null);
+  };
+
+  const saveHandle = (value: string | undefined) => {
+    if (!selected) return;
+    const result = updateSignatureHandle(selected.id, value);
+    if (!result.ok) {
+      setError(result.error);
+      return;
+    }
+    setError(null);
+    setStatus(value ? "Linked. Visitors can now click your ink to find you." : "Link removed.");
+    setSelected(null);
+    setEntriesVersion((v) => v + 1);
   };
 
   return (
     <motion.div
-      className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/50 p-4"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          transition={{ duration: DURATION.base, ease: EASE_OUT }}
-          onClick={onClose}
+      ref={panelRef}
+      role="dialog"
+      aria-modal="true"
+      aria-label="Guestbook"
+      className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/60 p-4"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: DURATION.base, ease: EASE_OUT }}
+      // Clicking the dim room (not the book or controls) closes the journal.
+      onClick={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
+      <button
+        ref={closeButtonRef}
+        type="button"
+        onClick={onClose}
+        aria-label="Close guestbook"
+        className="absolute top-4 right-4 flex h-11 w-11 items-center justify-center rounded-full bg-black/40 text-xl text-white/80 hover:bg-black/60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
+      >
+        ×
+      </button>
+
+      <motion.div
+        className="flex w-full max-w-4xl items-center justify-center gap-3"
+        initial={{ opacity: 0, scale: 0.94, y: 12 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.96, y: 8 }}
+        transition={{ duration: DURATION.base, ease: EASE_OUT }}
+      >
+        {/* Previous spread */}
+        <button
+          type="button"
+          onClick={() => setSpread((s) => Math.max(0, s - 1))}
+          disabled={spread === 0}
+          aria-label="Previous pages"
+          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-black/40 text-lg text-white/90 hover:bg-black/60 disabled:opacity-25 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
         >
-          <motion.div
-            ref={panelRef}
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="guestbook-overlay-title"
-            className="relative flex max-h-[92vh] w-full max-w-3xl flex-col gap-3 overflow-y-auto rounded-[var(--radius-window)] border border-[var(--glass-border)] bg-[var(--surface-bg)] p-6 text-[var(--fg)] shadow-[var(--glass-shadow)] backdrop-blur-[var(--glass-blur)]"
-            initial={{ opacity: 0, scale: 0.94, y: 12 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.96, y: 8 }}
-            transition={{ duration: DURATION.base, ease: EASE_OUT }}
-            onClick={(event) => event.stopPropagation()}
-          >
-            <button
-              ref={closeButtonRef}
-              type="button"
-              onClick={onClose}
-              aria-label="Close guestbook"
-              className="absolute top-3 right-3 z-10 flex h-11 w-11 items-center justify-center rounded-full text-xl text-[var(--fg-muted)] hover:bg-white/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
-            >
-              ×
-            </button>
+          ←
+        </button>
 
-            <div>
-              <h2 id="guestbook-overlay-title" className="pr-12 text-2xl font-semibold tracking-tight">
-                Guestbook
-              </h2>
-              <p className="mt-0.5 text-[14px] text-[var(--fg-muted)]">
-                Pick a marker and sign anywhere there&apos;s space. Hover a signature to see who left it.
-              </p>
-            </div>
+        {/* The book + its minimal controls */}
+        <div className="flex min-w-0 flex-1 flex-col items-center gap-2">
+          <div className={styles.book}>
+            <JournalPage
+              pageIndex={leftPage}
+              side="left"
+              signatures={signatures}
+              draft={draftByPage[leftPage] ?? []}
+              color={color}
+              myIds={myIds}
+              selectedId={selected?.id ?? null}
+              onSelectMine={selectMine}
+              onStrokeCommit={commitStroke}
+            />
+            <JournalPage
+              pageIndex={rightPage}
+              side="right"
+              signatures={signatures}
+              draft={draftByPage[rightPage] ?? []}
+              color={color}
+              myIds={myIds}
+              selectedId={selected?.id ?? null}
+              onSelectMine={selectMine}
+              onStrokeCommit={commitStroke}
+            />
+          </div>
 
-            {/* The open book */}
-            <div className={styles.book}>
-              <JournalPage
-                pageIndex={leftPage}
-                side="left"
-                signatures={signatures}
-                draft={draftByPage[leftPage] ?? []}
-                color={color}
-                onStrokeCommit={commitStroke}
+          {selected ? (
+            // Link strip: shown while one of your signatures is selected.
+            <div className="flex flex-wrap items-center justify-center gap-2 rounded-full bg-black/45 px-4 py-1.5">
+              <label htmlFor="gb-link-handle" className="text-[13px] text-white/85">
+                Link this signature to X:
+              </label>
+              <input
+                id="gb-link-handle"
+                type="text"
+                maxLength={16}
+                value={handleDraft}
+                onChange={(e) => setHandleDraft(e.target.value)}
+                placeholder="@you"
+                autoFocus
+                className="min-h-9 w-32 rounded-lg border border-white/25 bg-white/10 px-2.5 text-[14px] text-white outline-none placeholder:text-white/40 focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
               />
-              <JournalPage
-                pageIndex={rightPage}
-                side="right"
-                signatures={signatures}
-                draft={draftByPage[rightPage] ?? []}
-                color={color}
-                onStrokeCommit={commitStroke}
-              />
-            </div>
-
-            {/* Page navigation */}
-            <div className="flex items-center justify-center gap-4">
               <button
                 type="button"
-                onClick={() => setSpread((s) => Math.max(0, s - 1))}
-                disabled={spread === 0}
-                aria-label="Previous pages"
-                className="flex h-11 w-11 items-center justify-center rounded-full border border-[var(--glass-border)] text-lg hover:bg-white/10 disabled:opacity-30 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
+                onClick={() => saveHandle(handleDraft)}
+                className="min-h-9 rounded-lg bg-[var(--accent)] px-3.5 text-[13px] font-medium text-[var(--accent-fg)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
               >
-                ←
+                Save link
               </button>
-              <span className="min-w-32 text-center text-[13px] text-[var(--fg-muted)]" aria-live="polite">
-                Pages {leftPage + 1}–{rightPage + 1} of {totalPages}
+              {selected.xHandle ? (
+                <button
+                  type="button"
+                  onClick={() => saveHandle(undefined)}
+                  className="min-h-9 rounded-lg px-3 text-[13px] text-white/75 hover:bg-white/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
+                >
+                  Unlink
+                </button>
+              ) : null}
+              <button
+                type="button"
+                onClick={() => setSelected(null)}
+                className="min-h-9 rounded-lg px-3 text-[13px] text-white/75 hover:bg-white/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
+              >
+                Cancel
+              </button>
+            </div>
+          ) : (
+            // Default strip: ink actions + page position.
+            <div className="flex flex-wrap items-center justify-center gap-2 rounded-full bg-black/45 px-4 py-1.5">
+              <button
+                type="button"
+                onClick={undoStroke}
+                disabled={!hasDraft}
+                className="min-h-9 rounded-lg px-3 text-[13px] text-white/85 hover:bg-white/10 disabled:opacity-30 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
+              >
+                Undo
+              </button>
+              <button
+                type="button"
+                onClick={() => setDraftByPage({})}
+                disabled={!hasDraft}
+                className="min-h-9 rounded-lg px-3 text-[13px] text-white/85 hover:bg-white/10 disabled:opacity-30 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
+              >
+                Clear
+              </button>
+              <button
+                type="button"
+                onClick={handleSave}
+                disabled={!hasDraft && !typedName.trim()}
+                className="min-h-9 rounded-lg bg-[var(--accent)] px-4 text-[13px] font-medium text-[var(--accent-fg)] disabled:opacity-40 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
+              >
+                Sign the book
+              </button>
+              <span className="px-1 text-[12px] text-white/60" aria-live="polite">
+                {leftPage + 1}–{rightPage + 1} / {totalPages}
               </span>
-              <button
-                type="button"
-                onClick={() => setSpread((s) => Math.min(totalSpreads - 1, s + 1))}
-                disabled={spread >= totalSpreads - 1}
-                aria-label="Next pages"
-                className="flex h-11 w-11 items-center justify-center rounded-full border border-[var(--glass-border)] text-lg hover:bg-white/10 disabled:opacity-30 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
-              >
-                →
-              </button>
-            </div>
-
-            {/* Marker + actions toolbar */}
-            <div className="flex flex-wrap items-center gap-3">
-              <div className="flex items-center gap-2" role="radiogroup" aria-label="Marker color">
-                {MARKER_COLORS.map((marker) => (
-                  <button
-                    key={marker.value}
-                    type="button"
-                    role="radio"
-                    aria-checked={color === marker.value}
-                    aria-label={`${marker.name} marker`}
-                    onClick={() => setColor(marker.value)}
-                    className={`${styles.swatch} ${color === marker.value ? styles.swatchSelected : ""}`}
-                    style={{ background: marker.value }}
-                  />
-                ))}
-              </div>
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={undoStroke}
-                  disabled={!hasDraft}
-                  className="min-h-11 rounded-lg border border-[var(--glass-border)] px-4 text-[14px] hover:bg-white/10 disabled:opacity-30 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
-                >
-                  Undo
-                </button>
-                <button
-                  type="button"
-                  onClick={clearDraft}
-                  disabled={!hasDraft}
-                  className="min-h-11 rounded-lg border border-[var(--glass-border)] px-4 text-[14px] hover:bg-white/10 disabled:opacity-30 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
-                >
-                  Clear
-                </button>
-              </div>
-            </div>
-
-            {/* Link + save row */}
-            <div className="flex flex-wrap items-end gap-3">
-              <div className="flex min-w-40 flex-1 flex-col gap-1">
-                <label htmlFor="gb-handle" className="text-[13px] font-medium text-[var(--fg-muted)]">
-                  Link your X profile (optional)
-                </label>
+              {showTypedInput ? (
                 <input
-                  id="gb-handle"
-                  type="text"
-                  maxLength={16}
-                  value={xHandle}
-                  onChange={(e) => setXHandle(e.target.value)}
-                  placeholder="@you"
-                  className="min-h-11 rounded-lg border border-[var(--glass-border)] bg-white/5 px-3 text-[15px] text-[var(--fg)] outline-none placeholder:text-[var(--fg-muted)] focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
-                />
-              </div>
-              <div className="flex min-w-40 flex-1 flex-col gap-1">
-                <label htmlFor="gb-typed-name" className="text-[13px] font-medium text-[var(--fg-muted)]">
-                  No mouse? Type your name instead
-                </label>
-                <input
-                  id="gb-typed-name"
                   type="text"
                   maxLength={40}
                   value={typedName}
                   onChange={(e) => setTypedName(e.target.value)}
-                  className="min-h-11 rounded-lg border border-[var(--glass-border)] bg-white/5 px-3 text-[15px] text-[var(--fg)] outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+                  placeholder="Type your name"
+                  aria-label="Type your name instead of drawing"
+                  className="min-h-9 w-36 rounded-lg border border-white/25 bg-white/10 px-2.5 text-[14px] text-white outline-none placeholder:text-white/40 focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
                 />
-              </div>
-              <button
-                type="button"
-                onClick={handleSave}
-                className="min-h-11 rounded-lg bg-[var(--accent)] px-5 text-[15px] font-medium text-[var(--accent-fg)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
-              >
-                Sign the book
-              </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setShowTypedInput(true)}
+                  className="min-h-9 rounded-lg px-2 text-[12px] text-white/60 underline-offset-2 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
+                >
+                  No mouse? Type instead
+                </button>
+              )}
             </div>
+          )}
 
-            {error ? (
-              <p role="alert" className="text-[14px]" style={{ color: "var(--tl-close)" }}>
-                {error}
-              </p>
-            ) : null}
-            {justSigned && !error ? (
-              <p role="status" className="text-[14px]" style={{ color: "var(--tl-zoom)" }}>
-                Inked. You&apos;re part of the desk now.
-              </p>
-            ) : null}
-          </motion.div>
+          {error ? (
+            <p role="alert" className="rounded-full bg-black/45 px-4 py-1 text-[13px]" style={{ color: "#ff8a80" }}>
+              {error}
+            </p>
+          ) : null}
+          {status && !error ? (
+            <p role="status" className="rounded-full bg-black/45 px-4 py-1 text-[13px]" style={{ color: "#7ee6a1" }}>
+              {status}
+            </p>
+          ) : null}
+        </div>
+
+        {/* Next spread */}
+        <button
+          type="button"
+          onClick={() => setSpread((s) => Math.min(totalSpreads - 1, s + 1))}
+          disabled={spread >= totalSpreads - 1}
+          aria-label="Next pages"
+          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-black/40 text-lg text-white/90 hover:bg-black/60 disabled:opacity-25 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
+        >
+          →
+        </button>
+
+        {/* Marker tray resting beside the book */}
+        <div
+          className="flex shrink-0 flex-col gap-2 rounded-full bg-black/45 px-2 py-3"
+          role="radiogroup"
+          aria-label="Marker color"
+        >
+          {MARKER_COLORS.map((marker) => (
+            <button
+              key={marker.value}
+              type="button"
+              role="radio"
+              aria-checked={color === marker.value}
+              aria-label={`${marker.name} marker`}
+              onClick={() => setColor(marker.value)}
+              className={`${styles.swatch} ${color === marker.value ? styles.swatchSelected : ""}`}
+              style={{ background: marker.value }}
+            />
+          ))}
+        </div>
+      </motion.div>
     </motion.div>
   );
 }
