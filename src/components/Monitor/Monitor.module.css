@@ -1,0 +1,31 @@
+/* Laptop photo is 740x416 with its screen occupying a measured region:
+   x:172-559, y:56-314 (52.30% wide, 62.02% tall, starting at 23.24%/13.46%).
+   .frame is locked to the image's own aspect ratio so those percentages
+   line up with the real screen pixels regardless of render size. */
+
+.frame {
+  position: relative;
+  width: min(76vw, 1050px);
+  max-height: 82vh;
+  aspect-ratio: 740 / 416;
+}
+
+.laptopImage {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  pointer-events: none;
+  user-select: none;
+}
+
+.screenArea {
+  position: absolute;
+  left: 23.24%;
+  top: 13.46%;
+  width: 52.3%;
+  height: 62.02%;
+  overflow: hidden;
+  border-radius: 3px;
+}

@@ -1,0 +1,14 @@
+.room {
+  background: linear-gradient(180deg, #6b5a4a 0%, #7a6a58 55%, #8a7862 100%);
+}
+
+.floorWrap {
+  perspective: 1400px;
+  perspective-origin: 50% 0%;
+}
+
+.floor {
+  transform: rotateX(55deg);
+  transform-origin: top center;
+  background: linear-gradient(180deg, #5b4c3c 0%, #4a3d30 100%);
+}

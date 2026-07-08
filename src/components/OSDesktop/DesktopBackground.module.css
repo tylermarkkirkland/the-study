@@ -1,0 +1,10 @@
+.background {
+  /* Soft modern wallpaper — a diagonal gradient with a subtle accent-tinted
+     glow. Reads far better than a photo at the small in-monitor scale, and
+     adapts to the theme via tokens. */
+  background-color: var(--bg);
+  background-image:
+    radial-gradient(120% 90% at 15% 0%, color-mix(in srgb, var(--accent) 22%, transparent) 0%, transparent 55%),
+    radial-gradient(120% 100% at 100% 100%, color-mix(in srgb, var(--accent) 12%, transparent) 0%, transparent 50%),
+    linear-gradient(135deg, var(--bg) 0%, var(--bg-elevated) 100%);
+}
