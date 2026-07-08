@@ -10,6 +10,7 @@ import {
 } from "react";
 import type { ReactNode } from "react";
 import { desktopIcons } from "@/data/desktopIcons";
+import { markFound } from "@/lib/discovery/discoveryStore";
 
 export type Pos = { x: number; y: number };
 
@@ -88,6 +89,7 @@ export function DesktopIconsProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const trashIcon = useCallback((id: string) => {
+    markFound("icon-trash");
     setState((prev) =>
       prev.trashed.includes(id)
         ? prev

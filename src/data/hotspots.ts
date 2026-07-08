@@ -19,7 +19,6 @@ export const hotspots: HotspotConfig[] = [
   // outlined. NB: "screen" is intentionally omitted — it would also match the monitor's screen
   // planes; the radio's own screen is already covered by "radio".
   { id: "radio", nodeNameMatch: ["radio", "shell", "base", "light", "button", "antenna"], label: "Play radio" },
-  { id: "journal", nodeNameMatch: "binder_notebook", label: "Open journal" },
-  // No click action decided yet — hover glow only, on purpose (see OfficeScene).
-  { id: "guitar", nodeNameMatch: "guitar", label: "Guitar" },
+  { id: "journal", nodeNameMatch: "binder_notebook", label: "Sign the guestbook" },
+  { id: "guitar", nodeNameMatch: "guitar", label: "Play the guitar" },
 ];

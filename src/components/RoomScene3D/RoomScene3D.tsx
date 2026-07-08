@@ -8,10 +8,12 @@ import * as THREE from "three";
 import { EffectComposer, Outline } from "@react-three/postprocessing";
 import OSDesktop from "@/components/OSDesktop/OSDesktop";
 import InteractiveHotspot from "@/components/InteractiveHotspot/InteractiveHotspot";
-import JournalOverlay from "@/components/JournalOverlay/JournalOverlay";
+import GuestbookOverlay from "@/components/GuestbookOverlay/GuestbookOverlay";
+import GuitarOverlay from "@/components/GuitarOverlay/GuitarOverlay";
 import RoomWall from "@/components/RoomScene3D/RoomWall";
 import { hotspots } from "@/data/hotspots";
 import { createRadioController, type RadioController } from "@/lib/audio/radioPlayer";
+import { markFound } from "@/lib/discovery/discoveryStore";
 
 // Locates each configured hotspot's matching nodes by name, rather than hand-authoring
 // coordinates — survives re-exports of office.glb. A config with zero matches is omitted (not
@@ -88,9 +90,11 @@ function resolveHotspotId(
 type OfficeSceneProps = {
   journalOpen: boolean;
   onOpenJournal: () => void;
+  guitarOpen: boolean;
+  onOpenGuitar: () => void;
 };
 
-function OfficeScene({ journalOpen, onOpenJournal }: OfficeSceneProps) {
+function OfficeScene({ journalOpen, onOpenJournal, guitarOpen, onOpenGuitar }: OfficeSceneProps) {
   const { scene } = useGLTF("/models/office.glb");
   const hotspotNodes = useHotspotNodes(scene);
   const hotspotPositions = useHotspotPositions(hotspotNodes);
@@ -105,6 +109,7 @@ function OfficeScene({ journalOpen, onOpenJournal }: OfficeSceneProps) {
       radioControllerRef.current = createRadioController(setRadioPlaying);
     }
     radioControllerRef.current.handleClick();
+    markFound("radio-play");
   };
 
   // Mesh-accurate hover: covers the object's whole silhouette, not just the small anchored button
@@ -149,17 +154,30 @@ function OfficeScene({ journalOpen, onOpenJournal }: OfficeSceneProps) {
   };
 
   useEffect(() => {
-    const clickable = meshHoveredId === "radio" || meshHoveredId === "journal";
+    const clickable =
+      meshHoveredId === "radio" || meshHoveredId === "journal" || meshHoveredId === "guitar";
     document.body.style.cursor = clickable ? "pointer" : "auto";
     return () => {
       document.body.style.cursor = "auto";
     };
   }, [meshHoveredId]);
 
+  // Every hotspot mesh shows a pointer cursor, so clicking the mesh itself must
+  // work too — not just the small anchored button. Resolve the hit like hover does.
+  const handleSceneClick = (event: ThreeEvent<MouseEvent>) => {
+    const id = resolveHotspotId(event.object, hotspotNodes);
+    if (!id) return;
+    event.stopPropagation();
+    if (id === "radio") playRadio();
+    else if (id === "journal") onOpenJournal();
+    else if (id === "guitar") onOpenGuitar();
+  };
+
   // The button itself still reports its own hover/focus (its small area, and the only path for
   // keyboard users) — merged with mesh-hover so the glow lights up either way.
   const [radioDomHovered, setRadioDomHovered] = useState(false);
   const [journalDomHovered, setJournalDomHovered] = useState(false);
+  const [guitarDomHovered, setGuitarDomHovered] = useState(false);
 
   // Which hotspots should be glowing right now — either "engaged" (radio playing / journal open)
   // or hovered (over the object's full silhouette via raycasting, or over its anchored button for
@@ -167,7 +185,7 @@ function OfficeScene({ journalOpen, onOpenJournal }: OfficeSceneProps) {
   const glowingIds = new Set<string>();
   if (radioPlaying || radioDomHovered || meshHoveredId === "radio") glowingIds.add("radio");
   if (journalOpen || journalDomHovered || meshHoveredId === "journal") glowingIds.add("journal");
-  if (meshHoveredId === "guitar") glowingIds.add("guitar");
+  if (guitarOpen || guitarDomHovered || meshHoveredId === "guitar") glowingIds.add("guitar");
   const glowKey = [...glowingIds].sort().join(",");
 
   // The Outline post-process highlights whole meshes, so flatten each active hotspot's nodes down
@@ -208,7 +226,12 @@ function OfficeScene({ journalOpen, onOpenJournal }: OfficeSceneProps) {
 
   return (
     <>
-      <primitive object={scene} onPointerMove={handlePointerMove} onPointerOut={handlePointerOut} />
+      <primitive
+        object={scene}
+        onPointerMove={handlePointerMove}
+        onPointerOut={handlePointerOut}
+        onClick={handleSceneClick}
+      />
 
       <RoomWall scene={scene} />
 
@@ -259,11 +282,21 @@ function OfficeScene({ journalOpen, onOpenJournal }: OfficeSceneProps) {
 
       {hotspotPositions.journal ? (
         <InteractiveHotspot
-          label="Open journal"
+          label="Sign the guestbook"
           position={hotspotPositions.journal}
           active={journalOpen}
           onActivate={onOpenJournal}
           onHoverChange={setJournalDomHovered}
+        />
+      ) : null}
+
+      {hotspotPositions.guitar ? (
+        <InteractiveHotspot
+          label="Play the guitar"
+          position={hotspotPositions.guitar}
+          active={guitarOpen}
+          onActivate={onOpenGuitar}
+          onHoverChange={setGuitarDomHovered}
         />
       ) : null}
     </>
@@ -466,20 +499,27 @@ function RoomLoader() {
  */
 export default function RoomScene3D() {
   const [journalOpen, setJournalOpen] = useState(false);
+  const [guitarOpen, setGuitarOpen] = useState(false);
+  const overlayOpen = journalOpen || guitarOpen;
 
   return (
     <div className="relative h-screen w-screen" style={{ background: "var(--bg)" }}>
-      {/* `inert` while the journal overlay is open removes the room from tab order and AT
+      {/* `inert` while an overlay is open removes the room from tab order and AT
           exposure without unmounting it — same rendering, no dangling focus targets underneath
           a modal. */}
-      <div className="contents" inert={journalOpen}>
+      <div className="contents" inert={overlayOpen}>
         <Canvas camera={{ position: CAMERA_POSITION, fov: FOV }}>
           {/* Environment (HDRI) lives inside the same Suspense boundary as the GLB so the
               loader waits for both assets — otherwise the scene can flash lit-but-empty or
               unlit mid-load. */}
           <Suspense fallback={null}>
             <Environment files="/hdri/venice_sunset_1k.hdr" />
-            <OfficeScene journalOpen={journalOpen} onOpenJournal={() => setJournalOpen(true)} />
+            <OfficeScene
+              journalOpen={journalOpen}
+              onOpenJournal={() => setJournalOpen(true)}
+              guitarOpen={guitarOpen}
+              onOpenGuitar={() => setGuitarOpen(true)}
+            />
           </Suspense>
 
           <StaticCamera />
@@ -490,7 +530,8 @@ export default function RoomScene3D() {
 
       <RoomLoader />
 
-      <JournalOverlay open={journalOpen} onClose={() => setJournalOpen(false)} />
+      <GuestbookOverlay open={journalOpen} onClose={() => setJournalOpen(false)} />
+      <GuitarOverlay open={guitarOpen} onClose={() => setGuitarOpen(false)} />
     </div>
   );
 }

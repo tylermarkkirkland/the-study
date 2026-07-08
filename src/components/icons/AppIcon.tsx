@@ -49,16 +49,20 @@ export default function AppIcon({ appType, className }: AppIconProps) {
           <rect x="17.6" y="18" width="4.8" height="11" rx="2.4" fill={white} />
         </svg>
       );
-    case "projects":
-      // Folder on an indigo tile.
+    case "terminal":
+      // Prompt ">_" on a near-black tile.
       return (
         <svg viewBox="0 0 40 40" className={className} aria-hidden="true">
-          <Squircle id="appicon-projects" from="#8f7bff" to="#5b45d6" />
+          <Squircle id="appicon-terminal" from="#3a3a40" to="#141416" />
           <path
-            d="M11 15h6l2 2.4h10a1.6 1.6 0 0 1 1.6 1.6v8.4a1.6 1.6 0 0 1-1.6 1.6H11a1.6 1.6 0 0 1-1.6-1.6V16.6A1.6 1.6 0 0 1 11 15Z"
-            fill={white}
+            d="M12 14l6 6-6 6"
+            fill="none"
+            stroke={white}
+            strokeWidth="2.6"
+            strokeLinecap="round"
+            strokeLinejoin="round"
           />
-          <path d="M9.4 20.5h21.2v7.9a1.6 1.6 0 0 1-1.6 1.6H11a1.6 1.6 0 0 1-1.6-1.6Z" fill="rgba(255,255,255,0.78)" />
+          <rect x="21" y="24.7" width="8" height="2.6" rx="1.3" fill={white} />
         </svg>
       );
     case "notebook":
@@ -72,16 +76,26 @@ export default function AppIcon({ appType, className }: AppIconProps) {
           <line x1="15.5" y1="24" x2="21" y2="24" stroke="#f08a1d" strokeWidth="1.6" strokeLinecap="round" />
         </svg>
       );
-    case "resume":
-      // Document on a teal/green tile.
+    case "game":
+      // Pixel space-invader on a violet tile.
       return (
         <svg viewBox="0 0 40 40" className={className} aria-hidden="true">
-          <Squircle id="appicon-resume" from="#3ec7a4" to="#1f9e7a" />
-          <path d="M14 9h9l5 5v17a1.6 1.6 0 0 1-1.6 1.6H14A1.6 1.6 0 0 1 12.4 31V10.6A1.6 1.6 0 0 1 14 9Z" fill={white} />
-          <path d="M23 9v5h5Z" fill="rgba(0,0,0,0.12)" />
-          <line x1="16" y1="20" x2="24" y2="20" stroke="#1f9e7a" strokeWidth="1.6" strokeLinecap="round" />
-          <line x1="16" y1="24" x2="24" y2="24" stroke="#1f9e7a" strokeWidth="1.6" strokeLinecap="round" />
-          <line x1="16" y1="28" x2="21" y2="28" stroke="#1f9e7a" strokeWidth="1.6" strokeLinecap="round" />
+          <Squircle id="appicon-game" from="#b16bff" to="#6d2fd6" />
+          {/* Invader body built from a 2px pixel grid. */}
+          <g fill={white}>
+            <rect x="14" y="12" width="2.5" height="2.5" />
+            <rect x="23.5" y="12" width="2.5" height="2.5" />
+            <rect x="16.5" y="14.5" width="2.5" height="2.5" />
+            <rect x="21" y="14.5" width="2.5" height="2.5" />
+            <rect x="11.5" y="17" width="17" height="5" />
+            <rect x="9" y="19.5" width="2.5" height="5" />
+            <rect x="28.5" y="19.5" width="2.5" height="5" />
+            <rect x="14" y="22" width="12" height="2.5" />
+            <rect x="14" y="24.5" width="2.5" height="2.5" />
+            <rect x="23.5" y="24.5" width="2.5" height="2.5" />
+            <rect x="11.5" y="27" width="2.5" height="2.5" />
+            <rect x="26" y="27" width="2.5" height="2.5" />
+          </g>
         </svg>
       );
     case "trash":

@@ -9,9 +9,9 @@ type DefaultWindowSpec = {
 
 export const DEFAULT_WINDOW_SPECS: Record<AppType, DefaultWindowSpec> = {
   about: { size: { width: 420, height: 320 }, position: { x: 80, y: 60 } },
-  projects: { size: { width: 520, height: 380 }, position: { x: 140, y: 90 } },
   notebook: { size: { width: 460, height: 400 }, position: { x: 200, y: 70 } },
-  resume: { size: { width: 480, height: 420 }, position: { x: 120, y: 110 } },
+  terminal: { size: { width: 520, height: 360 }, position: { x: 110, y: 40 } },
+  game: { size: { width: 500, height: 405 }, position: { x: 150, y: 12 } },
   trash: { size: { width: 380, height: 300 }, position: { x: 260, y: 130 } },
 };
 

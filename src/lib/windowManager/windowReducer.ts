@@ -1,6 +1,6 @@
 import { CASCADE_OFFSET, DEFAULT_WINDOW_SPECS, Z_INDEX_BASE } from "./constants";
 
-export type AppType = "about" | "projects" | "notebook" | "resume" | "trash";
+export type AppType = "about" | "notebook" | "terminal" | "game" | "trash";
 
 export type WindowState = {
   id: string;

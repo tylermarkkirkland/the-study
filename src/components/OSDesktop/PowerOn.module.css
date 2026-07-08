@@ -1,0 +1,34 @@
+/* CRT power-on: the desktop appears as an overbright horizontal line that
+   snaps open vertically, then settles to normal brightness — the cheap
+   clip-path trick scoped in docs/room-3d-roadmap.md. Runs once per page load
+   (once per OSDesktop mount). */
+
+.powerOn {
+  animation: crtOn 900ms ease-out both;
+}
+
+@keyframes crtOn {
+  0% {
+    clip-path: inset(50% 0 50% 0);
+    filter: brightness(4) saturate(0.4);
+  }
+  35% {
+    /* Hold as a thin hot line for a beat before opening. */
+    clip-path: inset(49% 0 49% 0);
+    filter: brightness(4) saturate(0.4);
+  }
+  70% {
+    clip-path: inset(0 0 0 0);
+    filter: brightness(1.8) saturate(0.8);
+  }
+  100% {
+    clip-path: inset(0 0 0 0);
+    filter: brightness(1) saturate(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .powerOn {
+    animation: none;
+  }
+}
