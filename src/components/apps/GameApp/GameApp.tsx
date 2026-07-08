@@ -19,6 +19,10 @@ const ENEMY_BULLET_SPEED = 140;
 const MAX_PLAYER_BULLETS = 3;
 const COLS = 8;
 const HIT_RADIUS = 12;
+// The formation creeps toward you the whole round — reaching your row is an
+// instant game over, lives be damned. Base px/s, scaled up every wave.
+const DESCENT_BASE = 3.2;
+const BREACH_Y = PLAYER_Y - 16;
 const HIGHSCORE_KEY = "classic-os:arcade-highscore";
 const SHARE_URL = "https://x.com/intent/tweet";
 
@@ -34,6 +38,8 @@ type Sim = {
   score: number;
   lives: number;
   swayT: number;
+  /** How far the formation has crept down this wave, in px. */
+  descent: number;
   fireCooldown: number;
   invulnT: number;
   keys: { left: boolean; right: boolean };
@@ -59,18 +65,19 @@ function newSim(wave: number, score: number, lives: number): Sim {
     score,
     lives,
     swayT: 0,
+    descent: 0,
     fireCooldown: 0,
     invulnT: 1.2,
     keys: { left: false, right: false },
   };
 }
 
-function enemyPos(e: Enemy, swayT: number, wave: number): { x: number; y: number } {
-  const speed = 0.9 + wave * 0.25;
-  const sway = Math.sin(swayT * speed) * 34;
+function enemyPos(e: Enemy, sim: Sim): { x: number; y: number } {
+  const speed = 0.9 + sim.wave * 0.25;
+  const sway = Math.sin(sim.swayT * speed) * 34;
   return {
     x: 62 + e.col * 48 + sway,
-    y: 40 + e.row * 34 + Math.sin(swayT * speed * 0.5 + e.col) * 4,
+    y: 40 + e.row * 34 + sim.descent + Math.sin(sim.swayT * speed * 0.5 + e.col) * 4,
   };
 }
 
@@ -143,6 +150,7 @@ export default function GameApp() {
 
       // — advance —
       sim.swayT += dt;
+      sim.descent += DESCENT_BASE * (1 + (sim.wave - 1) * 0.35) * dt;
       sim.fireCooldown -= dt;
       sim.invulnT = Math.max(0, sim.invulnT - dt);
       if (sim.keys.left) sim.playerX -= PLAYER_SPEED * dt;
@@ -154,11 +162,19 @@ export default function GameApp() {
       sim.enemyBullets.forEach((b) => (b.y += ENEMY_BULLET_SPEED * dt));
       sim.enemyBullets = sim.enemyBullets.filter((b) => b.y < H + 10);
 
-      // Enemy fire: one random shooter on a per-wave-shrinking interval.
+      // Breach: the formation reaching your row ends the run outright.
       const alive = sim.enemies.filter((e) => e.alive);
+      for (const enemy of alive) {
+        if (enemyPos(enemy, sim).y >= BREACH_Y) {
+          endGame(sim.score);
+          return;
+        }
+      }
+
+      // Enemy fire: one random shooter on a per-wave-shrinking interval.
       if (sim.fireCooldown <= 0 && alive.length > 0) {
         const shooter = alive[Math.floor(Math.random() * alive.length)];
-        const pos = enemyPos(shooter, sim.swayT, sim.wave);
+        const pos = enemyPos(shooter, sim);
         sim.enemyBullets.push({ x: pos.x, y: pos.y + 12 });
         sim.fireCooldown = Math.max(0.35, 1.4 - sim.wave * 0.15);
       }
@@ -167,7 +183,7 @@ export default function GameApp() {
       for (const bullet of sim.bullets) {
         for (const enemy of alive) {
           if (!enemy.alive) continue;
-          const pos = enemyPos(enemy, sim.swayT, sim.wave);
+          const pos = enemyPos(enemy, sim);
           if (Math.abs(bullet.x - pos.x) < HIT_RADIUS && Math.abs(bullet.y - pos.y) < HIT_RADIUS) {
             enemy.alive = false;
             bullet.y = -100; // consumed
@@ -208,7 +224,7 @@ export default function GameApp() {
       ctx.font = "20px sans-serif";
       for (const enemy of sim.enemies) {
         if (!enemy.alive) continue;
-        const pos = enemyPos(enemy, sim.swayT, sim.wave);
+        const pos = enemyPos(enemy, sim);
         ctx.fillText(ARCADE_CHARACTERS.enemyRows[enemy.row], pos.x, pos.y);
       }
 
@@ -314,6 +330,7 @@ export default function GameApp() {
               <h2 className="text-lg font-semibold text-[var(--fg)]">Desk Defense</h2>
               <p className="max-w-xs text-[13px] leading-relaxed text-[var(--fg-muted)]">
                 ← → move · space fires · esc pauses. On touch: slide to steer, tap to fire.
+                They descend faster every wave — if they reach you, it&apos;s over.
               </p>
             </>
           ) : phase === "paused" ? (

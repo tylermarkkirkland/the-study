@@ -1,19 +1,116 @@
-.paper {
-  /* Glass panel — this modal renders full-screen (outside the monitor
-     corner-pin overlay), so real backdrop-filter composites correctly here. */
-  background: var(--glass-bg);
-  backdrop-filter: blur(var(--glass-blur));
-  -webkit-backdrop-filter: blur(var(--glass-blur));
-  border: 1px solid var(--glass-border);
+/* An opened journal: two paper pages meeting at a stitched gutter, floating
+   over the dimmed room. Paper stays light in both themes — it's a physical
+   object, not a UI surface. */
+
+.book {
+  display: flex;
+  width: 100%;
+  aspect-ratio: 3 / 2;
+  max-height: 62vh;
+  border-radius: 6px 10px 10px 6px;
+  box-shadow:
+    0 24px 60px rgba(0, 0, 0, 0.55),
+    0 2px 8px rgba(0, 0, 0, 0.35);
 }
 
-/* Honeypot: visually gone but still in the DOM for bots to find. Not
-   display:none — some bots skip hidden fields. */
-.honeypot {
-  position: absolute;
-  width: 1px;
-  height: 1px;
+.page {
+  position: relative;
+  flex: 1;
   overflow: hidden;
-  clip-path: inset(50%);
+  background:
+    /* faint ruled lines */
+    repeating-linear-gradient(
+      to bottom,
+      transparent 0px,
+      transparent 27px,
+      rgba(37, 99, 235, 0.1) 27px,
+      rgba(37, 99, 235, 0.1) 28px
+    ),
+    /* paper */ linear-gradient(105deg, #f7f2e7, #fbf7ee 60%, #f3ecdd);
+}
+
+.pageLeft {
+  border-radius: 6px 0 0 6px;
+  /* Shadow falling into the gutter. */
+  box-shadow: inset -14px 0 18px -12px rgba(0, 0, 0, 0.35);
+}
+
+.pageRight {
+  border-radius: 0 10px 10px 0;
+  box-shadow: inset 14px 0 18px -12px rgba(0, 0, 0, 0.35);
+}
+
+/* The drawing surface fills its page. Crosshair only while a marker is up. */
+.pageCanvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  touch-action: none; /* let pointer strokes own the gesture on touch */
+  cursor: crosshair;
+}
+
+.pageNumber {
+  position: absolute;
+  bottom: 6px;
+  width: 100%;
+  text-align: center;
+  font-size: 11px;
+  color: rgba(87, 83, 78, 0.75);
+  pointer-events: none;
+}
+
+/* Hover/click target over a linked signature's ink. */
+.signatureLink {
+  position: absolute;
+  border-radius: 8px;
+  border: 2px solid transparent;
+  background: transparent;
+  cursor: pointer;
+}
+
+.signatureLink:hover,
+.signatureLink:focus-visible {
+  border-color: rgba(29, 78, 216, 0.7);
+  background: rgba(29, 78, 216, 0.08);
+}
+
+.signatureLink:focus-visible {
+  outline: none;
+}
+
+/* @handle tag revealed on hover/focus, tucked above the ink. */
+.signatureLink .handleTag {
+  position: absolute;
+  top: -26px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: #1c1917;
+  color: #fafaf9;
+  font-size: 12px;
   white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease;
+}
+
+.signatureLink:hover .handleTag,
+.signatureLink:focus-visible .handleTag {
+  opacity: 1;
+}
+
+/* Marker swatch buttons. */
+.swatch {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  cursor: pointer;
+}
+
+.swatchSelected {
+  border-color: #ffffff;
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.3);
 }

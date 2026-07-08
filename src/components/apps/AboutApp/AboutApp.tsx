@@ -15,8 +15,7 @@ export default function AboutApp() {
         you&apos;re looking at was modeled in Blender; the windows, icons, and
         this whole little operating system are hand-built. It went through three
         different broken ways of gluing this screen to that monitor before one
-        stuck. There&apos;s a notebook on this desktop with the rest of those
-        stories.
+        stuck.
       </p>
       <p>
         Everything here is meant to be poked at. Some of it pokes back —

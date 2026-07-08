@@ -1,42 +1,43 @@
-// Guestbook storage. Local-first for now: entries live in this browser's
-// localStorage. ALL storage access goes through getEntries/addEntry, so wiring
-// the real shared backend later means reimplementing just these two functions
-// against a Route Handler — no UI changes.
+// Guestbook storage, v2: signatures are freehand marker strokes drawn onto
+// shared journal pages (vector points, not bitmaps — tiny to store, crisp at
+// any size, and they'll sync cleanly to a real backend later). Local-first:
+// this browser's localStorage. ALL access goes through getSignatures/
+// addSignature, so wiring the shared backend later means reimplementing just
+// these functions against a Route Handler — no UI changes.
 
-export type GuestbookEntry = {
+export type Stroke = {
+  color: string;
+  /** Normalized page coordinates, 0..1 on both axes. */
+  points: { x: number; y: number }[];
+};
+
+export type Signature = {
   id: string;
-  name: string;
-  message?: string;
-  /** X (Twitter) handle, stored without the leading @. */
+  /** Which journal page this mark lives on (0-based). */
+  page: number;
+  strokes: Stroke[];
+  /**
+   * Keyboard-accessible fallback: a typed name rendered in ink instead of
+   * drawn strokes. Position is the text's center, normalized.
+   */
+  text?: { value: string; x: number; y: number; color: string };
+  /** X (Twitter) handle, stored without the leading @. Links the signature. */
   xHandle?: string;
-  sticker: string;
   createdAt: number;
 };
 
-export type GuestbookInput = {
-  name: string;
-  message?: string;
-  xHandle?: string;
-  sticker: string;
-};
+export const MARKER_COLORS = [
+  { name: "Ink blue", value: "#1d4ed8" },
+  { name: "Black", value: "#1c1917" },
+  { name: "Red", value: "#dc2626" },
+  { name: "Green", value: "#15803d" },
+  { name: "Amber", value: "#b45309" },
+  { name: "Purple", value: "#7e22ce" },
+];
 
-export const NAME_MAX = 40;
-export const MESSAGE_MAX = 280;
+const STORAGE_KEY = "classic-os:guestbook-v2";
 
-export const STICKERS = ["⭐", "🎸", "📻", "☕", "🖥️", "🌙", "🌵", "🔥"];
-
-const STORAGE_KEY = "classic-os:guestbook-v1";
-
-// Deliberately small and low-drama: this is a taste floor for a public wall,
-// not a moderation system. The real backend gets real moderation.
-const BLOCKED = ["fuck", "shit", "bitch", "cunt", "nigger", "faggot"];
-
-function containsBlocked(text: string) {
-  const lower = text.toLowerCase();
-  return BLOCKED.some((word) => lower.includes(word));
-}
-
-export function getEntries(): GuestbookEntry[] {
+export function getSignatures(): Signature[] {
   if (typeof window === "undefined") return [];
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -44,51 +45,90 @@ export function getEntries(): GuestbookEntry[] {
       const parsed = JSON.parse(raw) as unknown;
       if (Array.isArray(parsed)) {
         return parsed.filter(
-          (e): e is GuestbookEntry =>
-            !!e && typeof e === "object" && typeof (e as GuestbookEntry).name === "string",
+          (s): s is Signature =>
+            !!s && typeof s === "object" && typeof (s as Signature).page === "number",
         );
       }
     }
   } catch {
-    // Corrupt/absent storage — treat as empty book.
+    // Corrupt/absent storage — treat as a fresh book.
   }
   return [];
 }
 
-export type AddEntryResult =
-  | { ok: true; entry: GuestbookEntry }
-  | { ok: false; error: string };
+export type AddSignatureInput = {
+  page: number;
+  strokes: Stroke[];
+  text?: { value: string; x: number; y: number; color: string };
+  xHandle?: string;
+};
 
-export function addEntry(input: GuestbookInput): AddEntryResult {
-  const name = input.name.trim().slice(0, NAME_MAX);
-  const message = input.message?.trim().slice(0, MESSAGE_MAX) || undefined;
+export type AddSignatureResult = { ok: true; signature: Signature } | { ok: false; error: string };
+
+export function addSignature(input: AddSignatureInput): AddSignatureResult {
+  const hasInk = input.strokes.some((s) => s.points.length > 1);
+  const text = input.text?.value.trim()
+    ? { ...input.text, value: input.text.value.trim().slice(0, 40) }
+    : undefined;
+  if (!hasInk && !text) {
+    return { ok: false, error: "Draw your name first — or type it in the field below." };
+  }
+
   // Accept "@handle" or "handle"; store bare. X handles are 1–15 word chars.
   const xHandle = input.xHandle?.trim().replace(/^@/, "") || undefined;
-
-  if (!name) {
-    return { ok: false, error: "A name (or an alias — we don't check ID) is required." };
-  }
   if (xHandle && !/^\w{1,15}$/.test(xHandle)) {
     return { ok: false, error: "That X handle doesn't look right — letters, numbers, and _ only." };
   }
-  if (containsBlocked(name) || (message ? containsBlocked(message) : false)) {
-    return { ok: false, error: "Let's keep the book friendly — try different wording." };
-  }
-  const sticker = STICKERS.includes(input.sticker) ? input.sticker : STICKERS[0];
 
-  const entry: GuestbookEntry = {
-    id: `gb-${Date.now()}-${Math.floor(Math.random() * 100000)}`,
-    name,
-    message,
+  const signature: Signature = {
+    id: `sig-${Date.now()}-${Math.floor(Math.random() * 100000)}`,
+    page: input.page,
+    strokes: hasInk ? input.strokes : [],
+    text,
     xHandle,
-    sticker,
     createdAt: Date.now(),
   };
 
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify([entry, ...getEntries()]));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify([...getSignatures(), signature]));
   } catch {
     return { ok: false, error: "Couldn't save your signature — storage seems to be unavailable." };
   }
-  return { ok: true, entry };
+  return { ok: true, signature };
+}
+
+/** Bounding box of a signature's ink (or text anchor), normalized 0..1. */
+export function signatureBounds(signature: Signature): { x: number; y: number; w: number; h: number } {
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (const stroke of signature.strokes) {
+    for (const p of stroke.points) {
+      minX = Math.min(minX, p.x);
+      minY = Math.min(minY, p.y);
+      maxX = Math.max(maxX, p.x);
+      maxY = Math.max(maxY, p.y);
+    }
+  }
+  if (signature.text) {
+    // Approximate a text box around the anchor; exact metrics don't matter
+    // for a hover target.
+    const halfW = Math.min(0.2, signature.text.value.length * 0.012);
+    minX = Math.min(minX, signature.text.x - halfW);
+    maxX = Math.max(maxX, signature.text.x + halfW);
+    minY = Math.min(minY, signature.text.y - 0.04);
+    maxY = Math.max(maxY, signature.text.y + 0.04);
+  }
+  if (!Number.isFinite(minX)) return { x: 0, y: 0, w: 0, h: 0 };
+  return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
+}
+
+/**
+ * Total pages to show: every signed page plus one blank page at the end,
+ * so there's always fresh space to sign. Minimum one spread (2 pages).
+ */
+export function pageCount(signatures: Signature[]): number {
+  const highest = signatures.reduce((max, s) => Math.max(max, s.page), -1);
+  return Math.max(2, highest + 2);
 }
