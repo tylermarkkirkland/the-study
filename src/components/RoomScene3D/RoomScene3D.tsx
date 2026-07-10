@@ -300,15 +300,37 @@ function OfficeScene({
   // mesh losing the depth race to the desk at a grazing angle.
   const journalProxy = useMemo(() => {
     const nodes = hotspotNodes.journal;
-    if (!nodes) return null;
-    const box = new THREE.Box3();
-    nodes.forEach((node) => box.expandByObject(node));
-    const center = box.getCenter(new THREE.Vector3());
-    const size = box.getSize(new THREE.Vector3());
-    const height = 0.09;
+    if (!nodes || nodes.length === 0) return null;
+    const node = nodes[0] as THREE.Mesh;
+    const geom = node.geometry as THREE.BufferGeometry | undefined;
+    if (!geom) return null;
+    geom.computeBoundingBox();
+    const lb = geom.boundingBox;
+    if (!lb) return null;
+    // The journal lies flat but rotated on the desk, so an axis-aligned box
+    // overhangs its corners. Build an ORIENTED box from the notebook's own local
+    // bounding box + world transform, so the hit area hugs the folio exactly.
+    const localSize = lb.getSize(new THREE.Vector3());
+    const localCenter = lb.getCenter(new THREE.Vector3());
+    node.updateWorldMatrix(true, false);
+    const pos = new THREE.Vector3();
+    const quat = new THREE.Quaternion();
+    const scl = new THREE.Vector3();
+    node.matrixWorld.decompose(pos, quat, scl);
+    const worldCenter = localCenter.applyMatrix4(node.matrixWorld);
+    // Thicken whichever axis is the folio's flat normal so the box stands a little
+    // proud of the desk and wins the raycast depth race, without ballooning.
+    const dims: [number, number, number] = [
+      localSize.x * scl.x,
+      localSize.y * scl.y,
+      localSize.z * scl.z,
+    ];
+    const thinAxis = dims.indexOf(Math.min(...dims));
+    dims[thinAxis] = Math.max(dims[thinAxis], 0.05);
     return {
-      position: [center.x, box.min.y + height / 2, center.z] as [number, number, number],
-      args: [size.x, height, size.z] as [number, number, number],
+      position: worldCenter.toArray() as [number, number, number],
+      quaternion: [quat.x, quat.y, quat.z, quat.w] as [number, number, number, number],
+      args: dims,
     };
   }, [hotspotNodes]);
 
@@ -392,6 +414,7 @@ function OfficeScene({
       {journalProxy ? (
         <mesh
           position={journalProxy.position}
+          quaternion={journalProxy.quaternion}
           onPointerOver={(event) => {
             event.stopPropagation();
             setJournalHovered(true);
