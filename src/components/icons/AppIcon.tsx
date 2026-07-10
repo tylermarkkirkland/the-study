@@ -77,25 +77,24 @@ export default function AppIcon({ appType, className }: AppIconProps) {
         </svg>
       );
     case "game":
-      // Pixel space-invader on a violet tile.
+      // The Silent on a black tile.
       return (
         <svg viewBox="0 0 40 40" className={className} aria-hidden="true">
-          <Squircle id="appicon-game" from="#b16bff" to="#6d2fd6" />
-          {/* Invader body built from a 2px pixel grid. */}
-          <g fill={white}>
-            <rect x="14" y="12" width="2.5" height="2.5" />
-            <rect x="23.5" y="12" width="2.5" height="2.5" />
-            <rect x="16.5" y="14.5" width="2.5" height="2.5" />
-            <rect x="21" y="14.5" width="2.5" height="2.5" />
-            <rect x="11.5" y="17" width="17" height="5" />
-            <rect x="9" y="19.5" width="2.5" height="5" />
-            <rect x="28.5" y="19.5" width="2.5" height="5" />
-            <rect x="14" y="22" width="12" height="2.5" />
-            <rect x="14" y="24.5" width="2.5" height="2.5" />
-            <rect x="23.5" y="24.5" width="2.5" height="2.5" />
-            <rect x="11.5" y="27" width="2.5" height="2.5" />
-            <rect x="26" y="27" width="2.5" height="2.5" />
-          </g>
+          <defs>
+            <clipPath id="appicon-game-clip">
+              <rect x="3" y="3" width="34" height="34" rx="9.5" />
+            </clipPath>
+          </defs>
+          <Squircle id="appicon-game" from="#1c1c20" to="#050506" />
+          <image
+            href="/images/silent-icon.png"
+            x="3"
+            y="3"
+            width="34"
+            height="34"
+            clipPath="url(#appicon-game-clip)"
+            preserveAspectRatio="xMidYMid meet"
+          />
         </svg>
       );
     case "trash":
@@ -108,6 +107,18 @@ export default function AppIcon({ appType, className }: AppIconProps) {
           <path d="M14 17h12l-1.1 12.4a1.6 1.6 0 0 1-1.6 1.5h-6.6a1.6 1.6 0 0 1-1.6-1.5Z" fill={white} />
           <line x1="18" y1="20" x2="18" y2="27.5" stroke="#6b7280" strokeWidth="1.4" strokeLinecap="round" />
           <line x1="22" y1="20" x2="22" y2="27.5" stroke="#6b7280" strokeWidth="1.4" strokeLinecap="round" />
+        </svg>
+      );
+    case "document":
+      // A .txt file — white dog-eared page with text lines, on a slate tile.
+      return (
+        <svg viewBox="0 0 40 40" className={className} aria-hidden="true">
+          <Squircle id="appicon-document" from="#7d8590" to="#4b5563" />
+          <path d="M13 10h9l5 5v15a1.6 1.6 0 0 1-1.6 1.6H13Z" fill={white} />
+          <path d="M22 10v5h5" fill="none" stroke="#4b5563" strokeWidth="1.4" strokeLinejoin="round" />
+          <line x1="16" y1="20" x2="24" y2="20" stroke="#4b5563" strokeWidth="1.4" strokeLinecap="round" />
+          <line x1="16" y1="23.5" x2="24" y2="23.5" stroke="#4b5563" strokeWidth="1.4" strokeLinecap="round" />
+          <line x1="16" y1="27" x2="21" y2="27" stroke="#4b5563" strokeWidth="1.4" strokeLinecap="round" />
         </svg>
       );
     default:

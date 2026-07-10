@@ -13,7 +13,7 @@ type DesktopIconProps = {
   bounds: { w: number; h: number };
   /** Highlight this icon as a drop target (used for the Trash while dragging over it). */
   highlight?: boolean;
-  onOpen: (appType: AppType) => void;
+  onOpen: () => void;
   onDragMove: (pos: Pos) => void;
   onDrop: (pos: Pos) => void;
 };
@@ -77,19 +77,19 @@ export default function DesktopIcon({
       onDrag={handleDrag}
       onDragEnd={handleDragEnd}
       onClick={() => {
-        if (!draggedRef.current) onOpen(appType);
+        if (!draggedRef.current) onOpen();
       }}
-      aria-label={`Open ${label}`}
+      aria-label={`Open ${label.replace(/\n/g, " ")}`}
       style={{ position: "absolute", left: 0, top: 0, x, y, touchAction: "none" }}
       className={`group flex w-20 cursor-grab flex-col items-center gap-1.5 rounded-xl p-2 outline-none transition-colors active:cursor-grabbing focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--accent)] ${
-        highlight ? "bg-[var(--accent)]/25 ring-2 ring-[var(--accent)]" : "hover:bg-white/10 focus-visible:bg-white/10"
+        highlight ? "bg-[var(--accent)]/25 ring-2 ring-[var(--accent)]" : "focus-visible:bg-white/10"
       }`}
     >
       <span className="pointer-events-none flex h-12 w-12 items-center justify-center">
         <AppIcon appType={appType} className="h-11 w-11" />
       </span>
       <span
-        className="pointer-events-none px-1.5 py-0.5 text-center text-[13px] leading-tight font-medium"
+        className="pointer-events-none whitespace-pre-line px-1.5 py-0.5 text-center text-[13px] leading-tight font-medium"
         style={{ color: "var(--fg)", textShadow: "0 1px 2px rgba(0,0,0,0.5)" }}
       >
         {label}

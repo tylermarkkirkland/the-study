@@ -7,6 +7,11 @@ type RoomWallProps = {
   scene: THREE.Object3D;
 };
 
+// Planks per texture tile. Shared by the texture painter and the world-space
+// repeat math below so the two can never drift out of sync.
+const PLANKS_PER_TILE = 8;
+const PLANK_WORLD_WIDTH = 0.15; // ~0.15m per board
+
 // Derives the back-wall placement from the loaded scene's bounding box so the wall
 // sits behind everything (guitar, shelves, desk) at the room's real scale, without
 // hand-authored coordinates that a GLB re-export would invalidate. The camera looks
@@ -40,7 +45,7 @@ function useWallLayout(scene: THREE.Object3D) {
 function useWoodTexture() {
   return useMemo(() => {
     if (typeof document === "undefined") return null;
-    const planks = 8; // planks per tile; the texture repeats horizontally across the wall
+    const planks = PLANKS_PER_TILE; // the texture repeats horizontally across the wall
     const plankPx = 64;
     const canvas = document.createElement("canvas");
     canvas.width = planks * plankPx;
@@ -114,7 +119,7 @@ export default function RoomWall({ scene }: RoomWallProps) {
 
   // Repeat the plank tile horizontally to a realistic board width (~0.15m each).
   if (wood) {
-    const tileWorldWidth = 8 * 0.15; // 8 planks × ~0.15m
+    const tileWorldWidth = PLANKS_PER_TILE * PLANK_WORLD_WIDTH;
     wood.repeat.set(Math.max(1, layout.width / tileWorldWidth), 1);
   }
 

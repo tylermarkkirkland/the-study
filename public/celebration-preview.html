@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Celebration preview — The Study</title>
+    <style>
+      :root { color-scheme: dark; }
+      * { box-sizing: border-box; }
+      html, body { height: 100%; margin: 0; }
+      body {
+        background: radial-gradient(120% 120% at 50% 0%, #16161a 0%, #0b0b0d 60%, #060608 100%);
+        color: #f5f5f7;
+        font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+        display: flex; flex-direction: column; align-items: center; justify-content: center;
+        gap: 20px; text-align: center; padding: 24px;
+      }
+      h1 { font-size: 28px; margin: 0; letter-spacing: -0.5px; }
+      p { margin: 0; max-width: 460px; color: #a1a1aa; line-height: 1.5; font-size: 16px; }
+      button {
+        margin-top: 8px; min-height: 52px; padding: 0 28px;
+        font-size: 18px; font-weight: 600; color: #fff;
+        background: #0a84ff; border: none; border-radius: 12px; cursor: pointer;
+        transition: transform 0.12s ease, background 0.12s ease;
+      }
+      button:hover { background: #0a74e0; transform: scale(1.03); }
+      button:active { transform: scale(0.98); }
+      button:focus-visible { outline: 3px solid #64d2ff; outline-offset: 3px; }
+      .note { font-size: 13px; color: #6e6e73; }
+      canvas { position: fixed; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 10; }
+      .popup-overlay { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; padding: 24px; z-index: 20; pointer-events: none; }
+      .popup-overlay[hidden] { display: none; }
+      .popup-card { pointer-events: auto; width: min(92vw, 420px); background: #1c1c20; border: 1px solid rgba(255,255,255,0.12); border-radius: 16px; padding: 24px; text-align: center; box-shadow: 0 24px 70px rgba(0,0,0,0.55); }
+      .popup-emoji { font-size: 40px; }
+      .popup-title { margin: 8px 0 0; font-size: 24px; font-weight: 600; color: #f5f5f7; }
+      .popup-line1 { margin: 12px 0 0; font-size: 15px; line-height: 1.5; color: #f5f5f7; }
+      .popup-line2 { margin: 4px 0 0; font-size: 14px; line-height: 1.5; color: #a1a1aa; }
+      .popup-btn { margin-top: 20px; }
+    </style>
+  </head>
+  <body>
+    <h1>🎉 Discovery-complete celebration</h1>
+    <p>This is the exact effect that fires when someone finds all seven discoveries: confetti plus the applause and party-horn sound effects.</p>
+    <button id="replay" type="button">▶ Play the celebration</button>
+    <p class="note">Click again to replay. (Preview page — served from <code>/celebration-preview.html</code>.)</p>
+
+    <canvas id="confetti" aria-hidden="true"></canvas>
+
+    <div id="popup" class="popup-overlay" hidden>
+      <div class="popup-card" role="dialog" aria-labelledby="pop-title" aria-describedby="pop-body">
+        <div class="popup-emoji" aria-hidden="true">🎉</div>
+        <h2 id="pop-title" class="popup-title">You did it!</h2>
+        <div id="pop-body">
+          <p class="popup-line1">That's all of them. This room is out of mysteries.</p>
+          <p class="popup-line2">You explored more of this desk than most people explore their own.</p>
+        </div>
+        <button id="popup-close" class="popup-btn" type="button">Nice</button>
+      </div>
+    </div>
+
+    <script>
+      // Layered finale audio — mirrors src/lib/audio/celebration.ts.
+      const CLIPS = [
+        { src: "/sounds/celebration/applause-cheer.mp3", volume: 0.7, delayMs: 0 },
+        { src: "/sounds/celebration/party-horn.mp3", volume: 0.6, delayMs: 0, startAtSec: 0.5, stopMs: 5000 },
+        { src: "/sounds/celebration/birthday-party-horn.mp3", volume: 0.6, delayMs: 180 },
+      ];
+      const FADE_MS = 400;
+      let live = [];
+      function fadeOutAndStop(audio) {
+        const v0 = audio.volume, t0 = performance.now();
+        const step = () => {
+          const p = (performance.now() - t0) / FADE_MS;
+          if (p >= 1) { audio.pause(); return; }
+          audio.volume = Math.max(0, v0 * (1 - p));
+          setTimeout(step, 30);
+        };
+        step();
+      }
+      function playSounds() {
+        // Stop anything still playing from a previous click, so replays are clean.
+        for (const a of live) { try { a.pause(); } catch (e) {} }
+        live = [];
+        for (const clip of CLIPS) {
+          const start = () => {
+            const audio = new Audio(clip.src);
+            audio.volume = clip.volume;
+            live.push(audio);
+            const begin = () => {
+              audio.play().catch(() => {});
+              if (clip.stopMs) setTimeout(() => fadeOutAndStop(audio), Math.max(0, clip.stopMs - FADE_MS));
+            };
+            if (clip.startAtSec) {
+              const seekThenBegin = () => { try { audio.currentTime = clip.startAtSec; } catch (e) {} begin(); };
+              if (audio.readyState >= 1) seekThenBegin();
+              else audio.addEventListener("loadedmetadata", seekThenBegin, { once: true });
+            } else {
+              begin();
+            }
+          };
+          if (clip.delayMs > 0) setTimeout(start, clip.delayMs);
+          else start();
+        }
+      }
+
+      // Confetti — mirrors src/components/CompletionConfetti/CompletionConfetti.tsx.
+      const COLORS = ["#ff5f57","#febc2e","#28c840","#0a84ff","#ff2d55","#ffd60a","#bf5af2","#64d2ff"];
+      const canvas = document.getElementById("confetti");
+      const ctx = canvas.getContext("2d");
+      let raf = null;
+
+      function fireConfetti() {
+        const dpr = Math.min(window.devicePixelRatio || 1, 2);
+        const w = window.innerWidth, h = window.innerHeight;
+        canvas.width = Math.floor(w * dpr);
+        canvas.height = Math.floor(h * dpr);
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+        // Continuous shower from the top — keep spawning for EMIT_MS so it holds
+        // steady density and lasts longer, then let the stragglers fall out.
+        const GRAVITY = 0.22, MAX_FALL = 7, DRAG = 0.99, SWAY = 0.9;
+        const EMIT_MS = 3500, SPAWN_PER_SEC = 65, MAX_MS = 8000;
+        const parts = [];
+        const spawnOne = () => {
+          parts.push({
+            x: Math.random() * w,
+            y: -20 - Math.random() * 40,
+            vx: (Math.random() - 0.5) * 3,
+            vy: 2 + Math.random() * 3,
+            size: 6 + Math.random() * 6,
+            rot: Math.random() * Math.PI, vrot: (Math.random() - 0.5) * 0.3,
+            phase: Math.random() * Math.PI * 2,
+            color: COLORS[(Math.random() * COLORS.length) | 0],
+            round: Math.random() < 0.35,
+          });
+        };
+
+        const startTs = performance.now();
+        let lastTs = startTs, spawnCarry = 0;
+        if (raf !== null) cancelAnimationFrame(raf);
+        const tick = (now) => {
+          const dt = Math.min(now - lastTs, 50); lastTs = now;
+          const elapsed = now - startTs;
+          if (elapsed < EMIT_MS) {
+            spawnCarry += (SPAWN_PER_SEC * dt) / 1000;
+            while (spawnCarry >= 1) { spawnOne(); spawnCarry -= 1; }
+          }
+          ctx.clearRect(0, 0, w, h);
+          for (let i = parts.length - 1; i >= 0; i--) {
+            const p = parts[i];
+            p.vy = Math.min(MAX_FALL, p.vy + GRAVITY); p.vx *= DRAG;
+            p.x += p.vx + Math.sin(now / 240 + p.phase) * SWAY;
+            p.y += p.vy; p.rot += p.vrot;
+            if (p.y > h + 40) { parts.splice(i, 1); continue; }
+            ctx.save();
+            ctx.translate(p.x, p.y);
+            ctx.rotate(p.rot);
+            ctx.fillStyle = p.color;
+            if (p.round) { ctx.beginPath(); ctx.arc(0, 0, p.size / 2, 0, Math.PI * 2); ctx.fill(); }
+            else { ctx.fillRect(-p.size / 2, -p.size / 2, p.size, p.size * 0.6); }
+            ctx.restore();
+          }
+          const stillGoing = elapsed < EMIT_MS || parts.length > 0;
+          if (stillGoing && elapsed < MAX_MS) raf = requestAnimationFrame(tick);
+          else { ctx.clearRect(0, 0, w, h); raf = null; }
+        };
+        raf = requestAnimationFrame(tick);
+      }
+
+      // "You did it!" popup — mirrors src/components/CompletionPopup.
+      const popup = document.getElementById("popup");
+      const showPopup = () => { popup.hidden = false; document.getElementById("popup-close").focus(); };
+      const hidePopup = () => { popup.hidden = true; };
+      document.getElementById("popup-close").addEventListener("click", hidePopup);
+      document.addEventListener("keydown", (e) => { if (e.key === "Escape") hidePopup(); });
+
+      document.getElementById("replay").addEventListener("click", () => {
+        playSounds();
+        fireConfetti();
+        showPopup();
+      });
+
+      // Exposed only so the confetti direction can be verified from a script.
+      window.__fireConfetti = fireConfetti;
+    </script>
+  </body>
+</html>

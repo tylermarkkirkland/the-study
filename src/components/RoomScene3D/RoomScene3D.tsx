@@ -3,14 +3,23 @@
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { Canvas, useThree } from "@react-three/fiber";
 import type { ThreeEvent } from "@react-three/fiber";
-import { Environment, useGLTF, useProgress } from "@react-three/drei";
+import { Environment, Html, useGLTF, useProgress } from "@react-three/drei";
 import * as THREE from "three";
 import { EffectComposer, Outline } from "@react-three/postprocessing";
 import OSDesktop from "@/components/OSDesktop/OSDesktop";
+import DeskDustClue from "@/components/DeskDustClue/DeskDustClue";
 import InteractiveHotspot from "@/components/InteractiveHotspot/InteractiveHotspot";
 import GuestbookOverlay from "@/components/GuestbookOverlay/GuestbookOverlay";
 import GuitarOverlay from "@/components/GuitarOverlay/GuitarOverlay";
+import StickyNoteOverlay from "@/components/StickyNoteOverlay/StickyNoteOverlay";
+import PenTool, { type NotepadShape } from "@/components/PenTool/PenTool";
+import BezelTuner from "@/components/BezelTuner/BezelTuner";
+import { type Bezel, DEFAULT_BEZEL, bezelBoxShadow } from "@/lib/room/bezel";
+import { usePartyMode } from "@/lib/party/partyStore";
+import { CAMERA_POSITION, CAMERA_TARGET, FOV } from "@/lib/room/camera";
+import overlayStyles from "./MonitorScreenOverlay.module.css";
 import RoomWall from "@/components/RoomScene3D/RoomWall";
+import PartyLights from "@/components/RoomScene3D/PartyLights";
 import { hotspots } from "@/data/hotspots";
 import { createRadioController, type RadioController } from "@/lib/audio/radioPlayer";
 import { markFound } from "@/lib/discovery/discoveryStore";
@@ -81,6 +90,41 @@ function resolveHotspotId(
   return null;
 }
 
+// Fixed transform for the in-world passcode writing on the sticky note (tuned
+// against the room). Visible but small — the readable version is the click-to-
+// open modal. position = absolute world point; rotZDeg spins the flat text,
+// tiltXDeg leans it off the flat-on-desk lay, distanceFactor sets its size.
+type DustClueTransform = {
+  position: [number, number, number];
+  rotZDeg: number;
+  tiltXDeg: number;
+  distanceFactor: number;
+};
+
+const DUST_CLUE: DustClueTransform = {
+  position: [0.47, 0.8, -0.18],
+  rotZDeg: -52.0,
+  tiltXDeg: 0,
+  distanceFactor: 0.35,
+};
+
+// The sticky note's traced outline — a flat polygon on the desk plane, used as
+// the glow/hover/click shape. Traced with the pen tool (?tune) because the
+// note sits at an angle and the optimizer merges the notepad group into one
+// wide mesh, so neither a box nor runtime bounds fit it. Default is a rough quad
+// around the stack; retrace to refine. points are world [x, z] at y = planeY.
+const NOTEPAD_SHAPE: NotepadShape = {
+  planeY: 0.792,
+  points: [
+    [0.469, -0.104],
+    [0.406, -0.137],
+    [0.431, -0.191],
+    [0.467, -0.257],
+    [0.532, -0.22],
+    [0.498, -0.158],
+  ],
+};
+
 // Hand-built in Blender by the user: metal office desk, LG monitor/keyboard/
 // mouse, chair, shelf, radio, guitar, and desk clutter. Exported at 519MB and
 // packed down to ~10.5MB with `gltf-transform optimize --compress draco
@@ -92,9 +136,22 @@ type OfficeSceneProps = {
   onOpenJournal: () => void;
   guitarOpen: boolean;
   onOpenGuitar: () => void;
+  stickyOpen: boolean;
+  onOpenSticky: () => void;
+  notepadShape: NotepadShape;
+  debugBox: boolean;
 };
 
-function OfficeScene({ journalOpen, onOpenJournal, guitarOpen, onOpenGuitar }: OfficeSceneProps) {
+function OfficeScene({
+  journalOpen,
+  onOpenJournal,
+  guitarOpen,
+  onOpenGuitar,
+  stickyOpen,
+  onOpenSticky,
+  notepadShape,
+  debugBox,
+}: OfficeSceneProps) {
   const { scene } = useGLTF("/models/office.glb");
   const hotspotNodes = useHotspotNodes(scene);
   const hotspotPositions = useHotspotPositions(hotspotNodes);
@@ -116,6 +173,11 @@ function OfficeScene({ journalOpen, onOpenJournal, guitarOpen, onOpenGuitar }: O
   // used for click/keyboard. Only re-renders when the resolved hotspot id actually changes.
   const [meshHoveredId, setMeshHoveredId] = useState<string | null>(null);
   const meshHoveredIdRef = useRef<string | null>(null);
+  // The invisible slab we glow for the notepad (see notepadProxy) — outlined
+  // instead of the real note mesh so the glow hugs only the bit above the desk.
+  // State (via a callback ref) rather than a ref, so the Outline selection
+  // recomputes once the mesh mounts.
+  const [notepadProxyMesh, setNotepadProxyMesh] = useState<THREE.Mesh | null>(null);
 
   const handlePointerMove = (event: ThreeEvent<PointerEvent>) => {
     const id = resolveHotspotId(event.object, hotspotNodes);
@@ -153,9 +215,27 @@ function OfficeScene({ journalOpen, onOpenJournal, guitarOpen, onOpenGuitar }: O
     }
   };
 
+  // The sticky-note stack is small and flush with the desk, so mesh-hover on the
+  // real note is unreliable — same fix as the journal: an invisible proxy owns
+  // hover/click.
+  const setNotepadHovered = (hovered: boolean) => {
+    if (hovered) {
+      if (meshHoveredIdRef.current !== "notepad") {
+        meshHoveredIdRef.current = "notepad";
+        setMeshHoveredId("notepad");
+      }
+    } else if (meshHoveredIdRef.current === "notepad") {
+      meshHoveredIdRef.current = null;
+      setMeshHoveredId(null);
+    }
+  };
+
   useEffect(() => {
     const clickable =
-      meshHoveredId === "radio" || meshHoveredId === "journal" || meshHoveredId === "guitar";
+      meshHoveredId === "radio" ||
+      meshHoveredId === "journal" ||
+      meshHoveredId === "guitar" ||
+      meshHoveredId === "notepad";
     document.body.style.cursor = clickable ? "pointer" : "auto";
     return () => {
       document.body.style.cursor = "auto";
@@ -171,6 +251,7 @@ function OfficeScene({ journalOpen, onOpenJournal, guitarOpen, onOpenGuitar }: O
     if (id === "radio") playRadio();
     else if (id === "journal") onOpenJournal();
     else if (id === "guitar") onOpenGuitar();
+    else if (id === "notepad") onOpenSticky();
   };
 
   // The button itself still reports its own hover/focus (its small area, and the only path for
@@ -178,6 +259,7 @@ function OfficeScene({ journalOpen, onOpenJournal, guitarOpen, onOpenGuitar }: O
   const [radioDomHovered, setRadioDomHovered] = useState(false);
   const [journalDomHovered, setJournalDomHovered] = useState(false);
   const [guitarDomHovered, setGuitarDomHovered] = useState(false);
+  const [notepadDomHovered, setNotepadDomHovered] = useState(false);
 
   // Which hotspots should be glowing right now — either "engaged" (radio playing / journal open)
   // or hovered (over the object's full silhouette via raycasting, or over its anchored button for
@@ -186,6 +268,7 @@ function OfficeScene({ journalOpen, onOpenJournal, guitarOpen, onOpenGuitar }: O
   if (radioPlaying || radioDomHovered || meshHoveredId === "radio") glowingIds.add("radio");
   if (journalOpen || journalDomHovered || meshHoveredId === "journal") glowingIds.add("journal");
   if (guitarOpen || guitarDomHovered || meshHoveredId === "guitar") glowingIds.add("guitar");
+  if (stickyOpen || notepadDomHovered || meshHoveredId === "notepad") glowingIds.add("notepad");
   const glowKey = [...glowingIds].sort().join(",");
 
   // The Outline post-process highlights whole meshes, so flatten each active hotspot's nodes down
@@ -196,16 +279,21 @@ function OfficeScene({ journalOpen, onOpenJournal, guitarOpen, onOpenGuitar }: O
   const outlineSelection = useMemo(() => {
     const meshes: THREE.Object3D[] = [];
     glowingIds.forEach((id) => {
+      // The notepad glows via its surface proxy (below), not the real note mesh,
+      // which extends down into the desk — outlining that would light up the
+      // buried body too.
+      if (id === "notepad") return;
       hotspotNodes[id]?.forEach((node) =>
         node.traverse((child) => {
           if ((child as THREE.Mesh).isMesh) meshes.push(child);
         }),
       );
     });
+    if (glowingIds.has("notepad") && notepadProxyMesh) meshes.push(notepadProxyMesh);
     return meshes;
     // glowKey captures exactly which ids are active; glowingIds itself is a fresh Set each render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [glowKey, hotspotNodes]);
+  }, [glowKey, hotspotNodes, notepadProxyMesh]);
 
   // Invisible hit-proxy for the journal (see setJournalHovered): a box standing on the desk over
   // the notebook's world footprint, so the whole notebook is hoverable/clickable despite the flat
@@ -224,6 +312,30 @@ function OfficeScene({ journalOpen, onOpenJournal, guitarOpen, onOpenGuitar }: O
     };
   }, [hotspotNodes]);
 
+  // Flat polygon geometry for the sticky-note outline, laid on the desk plane.
+  // Built from the traced (x, z) points: a Shape in XY, rotated flat and lifted
+  // to planeY so each vertex lands at world (x, planeY, z).
+  const notepadGeometry = useMemo(() => {
+    const shape = new THREE.Shape();
+    notepadShape.points.forEach(([x, z], i) => {
+      if (i === 0) shape.moveTo(x, -z);
+      else shape.lineTo(x, -z);
+    });
+    const geom = new THREE.ShapeGeometry(shape);
+    geom.rotateX(-Math.PI / 2);
+    geom.translate(0, notepadShape.planeY, 0);
+    return geom;
+  }, [notepadShape]);
+
+  // Centroid of the outline, for the keyboard/AT hotspot button.
+  const notepadCentroid = useMemo<[number, number, number]>(() => {
+    const pts = notepadShape.points;
+    const n = pts.length || 1;
+    const cx = pts.reduce((s, p) => s + p[0], 0) / n;
+    const cz = pts.reduce((s, p) => s + p[1], 0) / n;
+    return [cx, notepadShape.planeY, cz];
+  }, [notepadShape]);
+
   return (
     <>
       <primitive
@@ -234,6 +346,48 @@ function OfficeScene({ journalOpen, onOpenJournal, guitarOpen, onOpenGuitar }: O
       />
 
       <RoomWall scene={scene} />
+
+      {/* The passcode written on the sticky note, laid flat on it so there's
+          visible writing before you click. Small on purpose — the readable copy
+          is the click-to-open modal. pointer-events off so it never eats the
+          note's hover/click. */}
+      <Html
+        position={DUST_CLUE.position}
+        rotation={[
+          (-90 + DUST_CLUE.tiltXDeg) * (Math.PI / 180),
+          0,
+          (DUST_CLUE.rotZDeg * Math.PI) / 180,
+        ]}
+        transform
+        distanceFactor={DUST_CLUE.distanceFactor}
+        center
+        style={{ pointerEvents: "none" }}
+      >
+        <DeskDustClue />
+      </Html>
+
+      <mesh
+        ref={setNotepadProxyMesh}
+        geometry={notepadGeometry}
+        onPointerOver={(event) => {
+          event.stopPropagation();
+          setNotepadHovered(true);
+        }}
+        onPointerOut={() => setNotepadHovered(false)}
+        onClick={(event) => {
+          event.stopPropagation();
+          onOpenSticky();
+        }}
+      >
+        {/* Invisible in normal use (just the hover/click + glow-outline shape).
+            When tracing (?tune) it turns bright magenta + always-on-top so the
+            traced outline can be seen against the note. */}
+        {debugBox ? (
+          <meshBasicMaterial color="#ff00ff" side={THREE.DoubleSide} transparent opacity={0.6} depthTest={false} />
+        ) : (
+          <meshBasicMaterial side={THREE.DoubleSide} transparent opacity={0} depthWrite={false} />
+        )}
+      </mesh>
 
       {journalProxy ? (
         <mesh
@@ -299,15 +453,18 @@ function OfficeScene({ journalOpen, onOpenJournal, guitarOpen, onOpenGuitar }: O
           onHoverChange={setGuitarDomHovered}
         />
       ) : null}
+
+      <InteractiveHotspot
+        label="Read the sticky note"
+        position={notepadCentroid}
+        active={stickyOpen}
+        onActivate={onOpenSticky}
+        onHoverChange={setNotepadDomHovered}
+      />
     </>
   );
 }
 
-// Locked final camera, chosen by hand via the (now removed) orbit-controls
-// readout during Blender iteration.
-const CAMERA_POSITION: [number, number, number] = [-0.01, 1.02, 0.77];
-const CAMERA_TARGET: [number, number, number] = [0, 1, 0];
-const FOV = 45;
 
 // Cursor-driven tilt removed for now — it was the source of most of the
 // screen-alignment debugging pain, and wasn't even the actual cause of the
@@ -392,8 +549,8 @@ function cornersToMatrix3d({ tl, tr, br, bl }: Corners): string {
 // viewport size. With a fixed-vertical-FOV perspective camera, an
 // already-framed object's on-screen size/position scales purely with canvas
 // HEIGHT — widening the window just reveals more of the room at the sides
-// without moving what's already in frame. `toDisplayCorners`/`toReferenceCorners`
-// below use that to make the calibration resize-independent without touching
+// without moving what's already in frame. `toDisplayCorner`
+// below uses that to make the calibration resize-independent without touching
 // the 3D scene at all.
 const REFERENCE_VIEWPORT = { width: 1536, height: 743 };
 const CALIBRATED_CORNERS: Corners = {
@@ -427,8 +584,9 @@ function useViewportSize() {
 // CALIBRATED_CORNERS. Corners live in REFERENCE_VIEWPORT space and rescale to
 // the live window size every render, so resizing keeps the screen in place
 // on the monitor without touching the 3D scene at all.
-function MonitorScreenOverlay() {
+function MonitorScreenOverlay({ bezel }: { bezel: Bezel }) {
   const viewport = useViewportSize();
+  const party = usePartyMode();
 
   if (!viewport.width) return null;
 
@@ -436,6 +594,8 @@ function MonitorScreenOverlay() {
     acc[key] = toDisplayCorner(CALIBRATED_CORNERS[key], REFERENCE_VIEWPORT, viewport);
     return acc;
   }, {} as Corners);
+
+  const screenTransform = cornersToMatrix3d(displayCorners);
 
   return (
     <div className="pointer-events-none absolute inset-0">
@@ -447,11 +607,16 @@ function MonitorScreenOverlay() {
           width: `${CONTENT_WIDTH}px`,
           height: `${CONTENT_HEIGHT}px`,
           transformOrigin: "0 0",
-          transform: cornersToMatrix3d(displayCorners),
+          transform: screenTransform,
           background: "var(--bg)",
+          // Black bezel hiding the seam between this pinned screen and the
+          // monitor's screen opening — see @/lib/room/bezel. Tune live with the
+          // ?bezel URL param.
+          boxShadow: bezelBoxShadow(bezel),
+          borderRadius: `${bezel.radius}px`,
           // backdrop-filter doesn't composite reliably under this matrix3d
           // ancestor, so this subtree swaps true glass for the opaque
-          // "fake glass" surface. The flat CSS RoomScene keeps real blur.
+          // "fake glass" surface. The fullscreen fallback desktop keeps real blur.
           ["--surface-bg" as string]: "var(--glass-fallback-bg)",
           ["--surface-blur" as string]: "none",
         }}
@@ -459,6 +624,21 @@ function MonitorScreenOverlay() {
       >
         <OSDesktop />
       </div>
+
+      {/* Party glow riding the same corner-pin transform as the screen, so the
+          black bezel catches the party light (screen-blends a faint colored
+          rim onto the frame) while party mode is on. */}
+      <div
+        aria-hidden="true"
+        className={`${overlayStyles.bezelGlow} ${party ? overlayStyles.bezelGlowOn : ""}`}
+        style={{
+          width: `${CONTENT_WIDTH}px`,
+          height: `${CONTENT_HEIGHT}px`,
+          transformOrigin: "0 0",
+          transform: screenTransform,
+          borderRadius: `${bezel.radius}px`,
+        }}
+      />
     </div>
   );
 }
@@ -491,16 +671,31 @@ function RoomLoader() {
 
 /**
  * The office.glb scene, rendered live via react-three-fiber under a real
- * HDRI from a single, fully static locked camera angle, with the same
- * OSDesktop used on the flat Monitor corner-pinned onto the monitor's
- * screen. Promoted to the primary experience — RoomExperience mounts this
- * when WebGL is available and motion isn't reduced, and falls back to the
- * flat CSS RoomScene otherwise.
+ * HDRI from a single, fully static locked camera angle, with the shared
+ * OSDesktop corner-pinned onto the monitor's screen. Promoted to the primary
+ * experience — RoomExperience mounts this when WebGL is available and motion
+ * isn't reduced, and falls back to the fullscreen desktop otherwise.
  */
 export default function RoomScene3D() {
   const [journalOpen, setJournalOpen] = useState(false);
   const [guitarOpen, setGuitarOpen] = useState(false);
-  const overlayOpen = journalOpen || guitarOpen;
+  const [stickyOpen, setStickyOpen] = useState(false);
+  const overlayOpen = journalOpen || guitarOpen || stickyOpen;
+
+  // Sticky-note glow/hover outline — normally the baked-in NOTEPAD_SHAPE, but
+  // re-traceable (and shown magenta) via the pen tool when the URL has ?tune.
+  // Read once on mount to avoid useSearchParams' Suspense requirement.
+  const [notepadShape, setNotepadShape] = useState<NotepadShape>(NOTEPAD_SHAPE);
+  const [tuning, setTuning] = useState(false);
+  // Live screen-bezel tuning, gated behind ?bezel (independent of the pen tool).
+  const [bezel, setBezel] = useState<Bezel>(DEFAULT_BEZEL);
+  const [tuningBezel, setTuningBezel] = useState(false);
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setTuning(params.has("tune"));
+    setTuningBezel(params.has("bezel"));
+  }, []);
 
   return (
     <div className="relative h-screen w-screen" style={{ background: "var(--bg)" }}>
@@ -519,19 +714,37 @@ export default function RoomScene3D() {
               onOpenJournal={() => setJournalOpen(true)}
               guitarOpen={guitarOpen}
               onOpenGuitar={() => setGuitarOpen(true)}
+              stickyOpen={stickyOpen}
+              onOpenSticky={() => setStickyOpen(true)}
+              notepadShape={notepadShape}
+              debugBox={tuning}
             />
           </Suspense>
 
+          <PartyLights />
           <StaticCamera />
         </Canvas>
 
-        <MonitorScreenOverlay />
+        <MonitorScreenOverlay bezel={bezel} />
       </div>
 
       <RoomLoader />
 
+      {tuning ? (
+        <PenTool
+          value={notepadShape}
+          onChange={setNotepadShape}
+          onReset={() => setNotepadShape(NOTEPAD_SHAPE)}
+        />
+      ) : null}
+
+      {tuningBezel ? (
+        <BezelTuner value={bezel} onChange={setBezel} onReset={() => setBezel(DEFAULT_BEZEL)} />
+      ) : null}
+
       <GuestbookOverlay open={journalOpen} onClose={() => setJournalOpen(false)} />
       <GuitarOverlay open={guitarOpen} onClose={() => setGuitarOpen(false)} />
+      <StickyNoteOverlay open={stickyOpen} onClose={() => setStickyOpen(false)} />
     </div>
   );
 }

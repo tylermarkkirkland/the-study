@@ -1,6 +1,12 @@
 "use client";
 
 import { useSyncExternalStore } from "react";
+import { playDiscoveryChime } from "@/lib/audio/discoveryChime";
+import { playCelebration } from "@/lib/audio/celebration";
+import { discoveries } from "@/data/discoveries";
+
+// Finding this many discoveries means the collection is complete.
+const TOTAL_DISCOVERIES = discoveries.length;
 
 // Discovery progress as a plain module store rather than React Context, on
 // purpose: markFound() gets called from inside the R3F <Canvas> (the radio
@@ -42,6 +48,35 @@ export function markFound(id: string) {
     localStorage.setItem(STORAGE_KEY, JSON.stringify([...found]));
   } catch {
     // Ignore storage failures (private mode, quota) — session still works.
+  }
+  // Audible feedback for checking an item off — only on a genuinely new find
+  // (the has() guard above already returned for repeats). Completing the very
+  // last one earns the full party fanfare instead of the usual chime; the
+  // confetti burst is handled by <CompletionConfetti>, which watches this store.
+  if (found.size >= TOTAL_DISCOVERIES) {
+    playCelebration();
+  } else {
+    playDiscoveryChime();
+  }
+  listeners.forEach((listener) => listener());
+}
+
+/**
+ * Non-reactive read of whether a discovery has been found. For plain callers
+ * outside React render (e.g. terminal command handlers) — components that need
+ * to re-render on change should use useDiscoveries() instead.
+ */
+export function hasFound(id: string): boolean {
+  return found.has(id);
+}
+
+/** Clear all discovery progress (Field Notes back to zero). */
+export function resetDiscoveries() {
+  found = EMPTY;
+  try {
+    localStorage.removeItem(STORAGE_KEY);
+  } catch {
+    // Ignore storage failures — the in-memory reset below still applies.
   }
   listeners.forEach((listener) => listener());
 }

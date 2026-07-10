@@ -75,7 +75,11 @@ export default function DesktopIconGrid() {
               position={pos}
               bounds={size}
               highlight={icon.id === trashId && trashHot}
-              onOpen={openWindow}
+              onOpen={() =>
+                icon.appType === "document"
+                  ? openWindow("document", { documentId: icon.id, title: icon.label })
+                  : openWindow(icon.appType)
+              }
               onDragMove={(next) => handleDragMove(icon.id, next)}
               onDrop={(next) => handleDrop(icon.id, next)}
             />

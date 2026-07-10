@@ -1,4 +1,4 @@
-// Guestbook storage, v2: signatures are freehand marker strokes drawn onto
+// Guestbook storage, v3: signatures are freehand marker strokes drawn onto
 // shared journal pages (vector points, not bitmaps — tiny to store, crisp at
 // any size, and they'll sync cleanly to a real backend later). Local-first:
 // this browser's localStorage. ALL access goes through these functions, so
@@ -13,7 +13,7 @@ export type Point = { x: number; y: number };
 
 export type Stroke = {
   color: string;
-  /** Normalized page coordinates, 0..1 on both axes. */
+  /** Normalized spread coordinates, 0..1 across the full two-page spread. */
   points: Point[];
 };
 
@@ -21,8 +21,8 @@ export type SignatureText = { value: string; x: number; y: number; color: string
 
 export type Signature = {
   id: string;
-  /** Which journal page this mark lives on (0-based). */
-  page: number;
+  /** Which journal spread (open two-page view) this mark lives on (0-based). */
+  spread: number;
   strokes: Stroke[];
   /** Keyboard-accessible fallback: a typed name rendered in ink. */
   text?: SignatureText;
@@ -40,9 +40,11 @@ export const MARKER_COLORS = [
   { name: "Purple", value: "#7e22ce" },
 ];
 
-const STORAGE_KEY = "classic-os:guestbook-v2";
+// v3: signatures moved from per-page to per-spread coordinates. The version
+// bump abandons any older (v2) test signatures — the book starts fresh.
+const STORAGE_KEY = "classic-os:guestbook-v3";
 // The id of the ONE signature made from this browser — the editable one.
-const MINE_KEY = "classic-os:guestbook-mine";
+const MINE_KEY = "classic-os:guestbook-mine-v3";
 
 export function getSignatures(): Signature[] {
   if (typeof window === "undefined") return [];
@@ -53,7 +55,7 @@ export function getSignatures(): Signature[] {
       if (Array.isArray(parsed)) {
         return parsed.filter(
           (s): s is Signature =>
-            !!s && typeof s === "object" && typeof (s as Signature).page === "number",
+            !!s && typeof s === "object" && typeof (s as Signature).spread === "number",
         );
       }
     }
@@ -86,7 +88,7 @@ export function getMySignature(): Signature | null {
 }
 
 export type SaveSignatureInput = {
-  page: number;
+  spread: number;
   strokes: Stroke[];
   text?: SignatureText;
   xHandle?: string;
@@ -119,7 +121,7 @@ export function saveMySignature(input: SaveSignatureInput): SaveSignatureResult 
   const existing = existingId ? getSignatures().find((s) => s.id === existingId) : null;
   const signature: Signature = {
     id: existing?.id ?? `sig-${Date.now()}-${Math.floor(Math.random() * 100000)}`,
-    page: input.page,
+    spread: input.spread,
     strokes,
     text,
     xHandle,
@@ -171,7 +173,7 @@ export function eraseAt(strokes: Stroke[], point: Point, radius: number): Stroke
 }
 
 /** Bounding box of ink + optional text, normalized 0..1. */
-export function boundsOf(strokes: Stroke[], text?: SignatureText | null): {
+function boundsOf(strokes: Stroke[], text?: SignatureText | null): {
   x: number;
   y: number;
   w: number;
@@ -227,10 +229,11 @@ export function translateSignature(
 }
 
 /**
- * Total pages to show: every signed page plus one blank page at the end,
- * so there's always fresh space to sign. Minimum one spread (2 pages).
+ * Total spreads (open two-page views) to show: every signed spread plus one
+ * blank spread at the end, so there's always fresh space to sign. Minimum 4
+ * spreads so the book always has room to page through.
  */
-export function pageCount(signatures: Signature[]): number {
-  const highest = signatures.reduce((max, s) => Math.max(max, s.page), -1);
-  return Math.max(2, highest + 2);
+export function spreadCount(signatures: Signature[]): number {
+  const highest = signatures.reduce((max, s) => Math.max(max, s.spread), -1);
+  return Math.max(4, highest + 2);
 }

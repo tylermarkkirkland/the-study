@@ -1,9 +1,20 @@
 "use client";
 
-import { discoveries } from "@/data/discoveries";
+import { Fragment } from "react";
+import { discoveries, COMPLETION_LINES } from "@/data/discoveries";
 import { useDiscoveries } from "@/lib/discovery/discoveryStore";
 
-const SHARE_URL = "https://x.com/intent/tweet";
+// Renders *word* as italic emphasis so a clue can hint at a literal term to type
+// (e.g. the `hack` terminal command). Everything outside the asterisks is plain.
+function renderEmphasis(text: string) {
+  return text.split(/(\*[^*]+\*)/g).map((part, i) =>
+    part.length > 2 && part.startsWith("*") && part.endsWith("*") ? (
+      <em key={i}>{part.slice(1, -1)}</em>
+    ) : (
+      <Fragment key={i}>{part}</Fragment>
+    ),
+  );
+}
 
 // Field Notes: a first-person log of the room's mysteries, doubling as the
 // discovery checklist. Items flip from a hint to a green, checked "found"
@@ -14,18 +25,13 @@ export default function NotebookApp() {
   const foundCount = discoveries.filter((d) => found.has(d.id)).length;
   const allFound = foundCount === discoveries.length;
 
-  const shareText = `I found all ${discoveries.length} secrets hidden in this desk. See if you can. `;
-  const shareHref = `${SHARE_URL}?text=${encodeURIComponent(shareText)}&url=${encodeURIComponent(
-    typeof window === "undefined" ? "" : window.location.origin,
-  )}`;
-
   return (
     <div className="flex h-full flex-col gap-3 overflow-y-auto p-5">
       <div>
-        <h2 className="text-lg font-semibold text-[var(--fg)]">Field Notes</h2>
+        <h2 className="text-lg font-semibold text-[var(--fg)]">Notes</h2>
         <p className="mt-1 text-[14px] leading-relaxed text-[var(--fg-muted)]">
-          Things I&apos;ve noticed around this room that don&apos;t quite add up.
-          Crossing them off as I figure them out.
+          Things about this room that don&apos;t quite add up. I need to get all
+          this figured out.
         </p>
       </div>
 
@@ -52,12 +58,12 @@ export default function NotebookApp() {
               {isFound ? (
                 <span style={{ color: "var(--tl-zoom)" }}>
                   <span className="sr-only">Figured out: </span>
-                  {d.foundLabel}
+                  {renderEmphasis(d.foundLabel)}
                 </span>
               ) : (
                 <span className="text-[var(--fg-muted)]">
                   <span className="sr-only">Still a mystery: </span>
-                  {d.hidden ? "???" : d.hint}
+                  {d.hidden ? "???" : renderEmphasis(d.hint)}
                 </span>
               )}
             </li>
@@ -68,19 +74,11 @@ export default function NotebookApp() {
       {allFound ? (
         <div className="mt-1 rounded-lg border border-[var(--glass-border)] bg-white/5 p-4">
           <p className="text-[15px] font-semibold" style={{ color: "var(--tl-zoom)" }}>
-            That&apos;s all of them. This room is out of mysteries.
+            {COMPLETION_LINES[0]}
           </p>
           <p className="mt-1 text-[14px] leading-relaxed text-[var(--fg-muted)]">
-            You explored more of this desk than most people explore their own.
+            {COMPLETION_LINES[1]}
           </p>
-          <a
-            href={shareHref}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="mt-3 inline-flex min-h-11 items-center rounded-lg bg-[var(--accent)] px-4 text-[14px] font-medium text-[var(--accent-fg)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
-          >
-            Share what you found
-          </a>
         </div>
       ) : null}
     </div>

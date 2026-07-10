@@ -3,6 +3,7 @@
    object, not a UI surface. */
 
 .book {
+  position: relative; /* anchors the full-spread canvas + signature links */
   display: flex;
   width: 100%;
   aspect-ratio: 3 / 2;
@@ -40,8 +41,9 @@
   box-shadow: inset 14px 0 18px -12px rgba(0, 0, 0, 0.35);
 }
 
-/* The drawing surface fills its page. Cursor is set per-tool inline. */
-.pageCanvas {
+/* One drawing surface spanning the WHOLE spread — ink and drags cross the
+   gutter freely. Cursor is set per-tool inline. */
+.spreadCanvas {
   position: absolute;
   inset: 0;
   width: 100%;

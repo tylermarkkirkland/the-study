@@ -1,0 +1,25 @@
+/* Party glow for the monitor's black bezel. While party mode is on, a faint
+   colored rim hugs the screen frame so the black bezel catches the party light
+   rather than sitting dead. This element rides the same matrix3d as the screen,
+   so the glow keeps the monitor's perspective, and `screen` blend makes it read
+   as emitted light on the frame. Purely cosmetic. */
+.bezelGlow {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 600ms ease;
+  mix-blend-mode: screen;
+  /* A tight, dim rim hugging the black frame — a subtle hint of the party
+     light catching the bezel, NOT a room-filling bloom. */
+  box-shadow:
+    0 0 5px 0 rgba(255, 47, 208, 0.4),
+    0 0 12px 1px rgba(41, 210, 255, 0.22);
+}
+
+/* Static, on purpose: a constant faint rim so the frame catches the party
+   light. The room's PartyLights carry all the motion. */
+.bezelGlowOn {
+  opacity: 1;
+}

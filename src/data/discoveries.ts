@@ -8,40 +8,53 @@ export type DiscoveryConfig = {
   hidden?: boolean;
 };
 
-// The Field Notes checklist. Order is display order: approachable mysteries
-// first, hidden ones sunk to the bottom. Every id here must have a matching
-// markFound(id) call at the moment the interaction actually happens — grep for
-// the id string to find the wiring site.
+// The Field Notes checklist. Order is display order. Every id here must have a
+// matching markFound(id) call at the moment the interaction actually happens —
+// grep for the id string to find the wiring site.
 export const discoveries: DiscoveryConfig[] = [
   {
     id: "radio-play",
-    hint: "Something on the shelf still hums when it thinks no one's listening.",
-    foundLabel: "The radio works. Keep clicking — it knows more than one station.",
-  },
-  {
-    id: "guestbook-sign",
-    hint: "There's a book on the desk. People keep leaving marks in it.",
-    foundLabel: "Signed the book on the desk.",
+    hint: "There's something weird going on with my radio.",
+    foundLabel: "It sounds like someone is trying to reach me.",
   },
   {
     id: "guitar-play",
-    hint: "Six strings in the corner, probably still in tune. Probably.",
-    foundLabel: "Played the guitar. The neighbors have opinions.",
+    hint: "I really need to practice guitar more.",
+    foundLabel: "Picked up the guitar and played a bit. The neighbors have opinions.",
   },
   {
-    id: "game-wave",
-    hint: "Someone installed a game on this computer. The high score is still standing.",
-    foundLabel: "Cleared a wave. The high score is nervous.",
+    id: "game-beat",
+    hint: "I still haven't been able to beat Topple the Tower.",
+    foundLabel: "The heart has been slain!",
   },
   {
-    id: "terminal-secret",
-    hint: "The computer answers to more commands than it admits to.",
-    foundLabel: "Found one of the terminal's secrets.",
+    id: "guestbook-sign",
+    hint: "It looks like other people have been here! I should leave my mark.",
+    foundLabel: "Signed the book on the desk. My mark's in there now, too.",
   },
   {
-    id: "icon-trash",
-    hint: "???",
-    foundLabel: "Threw something away. (It can come back — check the Trash.)",
+    id: "terminal-hack",
+    hint: "I feel like someone tried to *hack* my computer.",
+    foundLabel:
+      "Cracked the passcode and ran hack in the terminal. Turns out the sticky note had the key all along.",
+  },
+  {
+    id: "terminal-matrix",
+    hint: "There is no spoon?",
+    foundLabel: "Ran matrix in the terminal. There is no spoon.",
+  },
+  {
+    id: "trash-file",
     hidden: true,
+    hint: "I really should empty the Trash one of these days.",
+    foundLabel: "You snoop.",
   },
+];
+
+// Shown when every discovery is found — used by both the Field Notes app and the
+// completion popup, so the two never drift apart.
+export const COMPLETION_TITLE = "You did it!";
+export const COMPLETION_LINES = [
+  "That's all of them. This room is out of mysteries.",
+  "You explored more of this desk than most people explore their own.",
 ];

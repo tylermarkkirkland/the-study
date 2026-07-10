@@ -13,6 +13,7 @@ export const DEFAULT_WINDOW_SPECS: Record<AppType, DefaultWindowSpec> = {
   terminal: { size: { width: 520, height: 360 }, position: { x: 110, y: 40 } },
   game: { size: { width: 500, height: 405 }, position: { x: 150, y: 12 } },
   trash: { size: { width: 380, height: 300 }, position: { x: 260, y: 130 } },
+  document: { size: { width: 420, height: 340 }, position: { x: 300, y: 90 } },
 };
 
 export const CASCADE_OFFSET = 28;

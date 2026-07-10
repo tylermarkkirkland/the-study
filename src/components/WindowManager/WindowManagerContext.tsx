@@ -12,12 +12,16 @@ import { appRegistry } from "./appRegistry";
 
 type WindowManagerContextValue = {
   windows: WindowState[];
-  openWindow: (appType: AppType) => void;
+  openWindow: (appType: AppType, opts?: { documentId?: string; title?: string }) => void;
   closeWindow: (id: string) => void;
   focusWindow: (id: string) => void;
   minimizeWindow: (id: string) => void;
   restoreWindow: (id: string) => void;
   moveWindow: (id: string, position: { x: number; y: number }) => void;
+  toggleMaximize: (
+    id: string,
+    bounds: { position: { x: number; y: number }; size: { width: number; height: number } },
+  ) => void;
 };
 
 const WindowManagerContext = createContext<WindowManagerContextValue | null>(null);
@@ -25,9 +29,17 @@ const WindowManagerContext = createContext<WindowManagerContextValue | null>(nul
 export function WindowManagerProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(windowReducer, initialWindowManagerState);
 
-  const openWindow = useCallback((appType: AppType) => {
-    dispatch({ type: "OPEN_WINDOW", appType, title: appRegistry[appType].title });
-  }, []);
+  const openWindow = useCallback(
+    (appType: AppType, opts?: { documentId?: string; title?: string }) => {
+      dispatch({
+        type: "OPEN_WINDOW",
+        appType,
+        title: opts?.title ?? appRegistry[appType].title,
+        documentId: opts?.documentId,
+      });
+    },
+    [],
+  );
 
   const closeWindow = useCallback((id: string) => {
     dispatch({ type: "CLOSE_WINDOW", id });
@@ -49,6 +61,16 @@ export function WindowManagerProvider({ children }: { children: ReactNode }) {
     dispatch({ type: "MOVE_WINDOW", id, position });
   }, []);
 
+  const toggleMaximize = useCallback(
+    (
+      id: string,
+      bounds: { position: { x: number; y: number }; size: { width: number; height: number } },
+    ) => {
+      dispatch({ type: "TOGGLE_MAXIMIZE", id, bounds });
+    },
+    [],
+  );
+
   const value = useMemo(
     () => ({
       windows: state.windows,
@@ -58,8 +80,18 @@ export function WindowManagerProvider({ children }: { children: ReactNode }) {
       minimizeWindow,
       restoreWindow,
       moveWindow,
+      toggleMaximize,
     }),
-    [state.windows, openWindow, closeWindow, focusWindow, minimizeWindow, restoreWindow, moveWindow]
+    [
+      state.windows,
+      openWindow,
+      closeWindow,
+      focusWindow,
+      minimizeWindow,
+      restoreWindow,
+      moveWindow,
+      toggleMaximize,
+    ]
   );
 
   return (

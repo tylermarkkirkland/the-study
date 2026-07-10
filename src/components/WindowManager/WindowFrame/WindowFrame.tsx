@@ -16,14 +16,14 @@ type WindowFrameProps = {
 };
 
 export default function WindowFrame({ window: win, containerRef, isFocused }: WindowFrameProps) {
-  const { closeWindow, focusWindow, minimizeWindow, moveWindow } = useWindowManager();
+  const { closeWindow, focusWindow, minimizeWindow, moveWindow, toggleMaximize } =
+    useWindowManager();
   const dragControls = useDragControls();
   // Position is driven entirely by these transform values (left/top stay 0), so
   // committing a drag never desyncs a store-driven left/top against a reset
   // offset — the source of the old one-frame "snap" on release.
   const x = useMotionValue(win.position.x);
   const y = useMotionValue(win.position.y);
-  const frameRef = useRef<HTMLDivElement>(null);
   const isDragging = useRef(false);
 
   const AppContent = appRegistry[win.appType].Component;
@@ -78,24 +78,21 @@ export default function WindowFrame({ window: win, containerRef, isFocused }: Wi
     moveWindow(win.id, clamped);
   };
 
-  // Green "zoom" control — a lightweight, predictable re-center of the window
-  // within the desktop area (no maximize state in the reducer, and a true
-  // fullscreen inside the small keystoned monitor screen would be awkward).
+  // Green control — maximize the window to fill the desktop area (everything
+  // below the menu bar), toggling back to its previous bounds on a second click.
+  // The container already sits below the menu bar, so filling it never covers the
+  // top bar.
   const handleZoom = () => {
     const el = containerRef.current;
     if (!el) return;
-    moveWindow(
-      win.id,
-      clamp({
-        x: (el.clientWidth - win.size.width) / 2,
-        y: (el.clientHeight - win.size.height) / 2,
-      }),
-    );
+    toggleMaximize(win.id, {
+      position: { x: 0, y: 0 },
+      size: { width: el.clientWidth, height: el.clientHeight },
+    });
   };
 
   return (
     <motion.div
-      ref={frameRef}
       role="dialog"
       aria-label={win.title}
       aria-hidden={win.isMinimized}
@@ -147,7 +144,7 @@ export default function WindowFrame({ window: win, containerRef, isFocused }: Wi
         onZoom={handleZoom}
       />
       <div className="min-h-0 flex-1 overflow-auto" style={{ background: "var(--bg-elevated)", color: "var(--fg)" }}>
-        <AppContent />
+        <AppContent documentId={win.documentId} />
       </div>
     </motion.div>
   );

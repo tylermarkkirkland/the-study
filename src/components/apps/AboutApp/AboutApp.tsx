@@ -1,6 +1,6 @@
-// NOTE FOR TYLER: this copy is a first draft in the journal's voice — edit
-// freely. Socials are placeholders; swap in whichever links you want public
-// (the work email deliberately isn't here).
+const X_URL = "https://x.com/TylerKirkl69749";
+const LINKEDIN_URL = "https://www.linkedin.com/in/tyler-kirkland/";
+
 export default function AboutApp() {
   return (
     <div className="flex h-full flex-col gap-3 overflow-y-auto p-5 text-[15px] leading-relaxed text-[var(--fg-muted)]">
@@ -19,11 +19,11 @@ export default function AboutApp() {
       </p>
       <p>
         Everything here is meant to be poked at. Some of it pokes back —
-        keep count in the Field Notes.
+        keep count in Notes.
       </p>
       <div className="mt-1 flex flex-wrap gap-3">
         <a
-          href="https://x.com/yourhandle"
+          href={X_URL}
           target="_blank"
           rel="noopener noreferrer"
           className="inline-flex min-h-11 items-center rounded-lg border border-[var(--glass-border)] px-4 text-[14px] font-medium text-[var(--fg)] hover:bg-white/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
@@ -31,7 +31,7 @@ export default function AboutApp() {
           X / Twitter
         </a>
         <a
-          href="https://www.linkedin.com/in/yourprofile"
+          href={LINKEDIN_URL}
           target="_blank"
           rel="noopener noreferrer"
           className="inline-flex min-h-11 items-center rounded-lg border border-[var(--glass-border)] px-4 text-[14px] font-medium text-[var(--fg)] hover:bg-white/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"

@@ -21,4 +21,8 @@ export const hotspots: HotspotConfig[] = [
   { id: "radio", nodeNameMatch: ["radio", "shell", "base", "light", "button", "antenna"], label: "Play radio" },
   { id: "journal", nodeNameMatch: "binder_notebook", label: "Sign the guestbook" },
   { id: "guitar", nodeNameMatch: "guitar", label: "Play the guitar" },
+  // The sticky-note stack on the desk; clicking it opens a readable close-up
+  // (the passcode is too small to read in the room). The loose sheet's node name
+  // doesn't survive the optimizer, but the stack's does.
+  { id: "notepad", nodeNameMatch: "office_notepads_sticky_stack", label: "Read the sticky note" },
 ];

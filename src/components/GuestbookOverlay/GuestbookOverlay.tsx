@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   clearMySignature,
@@ -9,9 +9,9 @@ import {
   getMySignature,
   getSignatures,
   MARKER_COLORS,
-  pageCount,
   saveMySignature,
   signatureBounds,
+  spreadCount,
   translateSignature,
   type Point,
   type Signature,
@@ -28,14 +28,40 @@ type GuestbookOverlayProps = {
 };
 
 type Tool = "marker" | "eraser" | "move";
-const ERASER_RADIUS = 0.035;
+// Normalized to the full spread width (wider than a single page), so kept
+// small enough that rubbing out doesn't feel oversized horizontally.
+const ERASER_RADIUS = 0.022;
 
 const FOCUSABLE_SELECTOR =
   'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
 
-// Paints one page: others' committed ink first, then (on my page) my live
-// editable ink + text. Strokes are normalized 0..1; quadratic-midpoint
-// smoothing keeps marker lines from looking like polylines.
+// Real tool icons (inline SVG, inherit currentColor from the button).
+const PenIcon = () => (
+  <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z" />
+  </svg>
+);
+const EraserIcon = () => (
+  <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="m7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21" />
+    <path d="M22 21H7" />
+    <path d="m5 11 9 9" />
+  </svg>
+);
+const MoveIcon = () => (
+  <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <polyline points="5 9 2 12 5 15" />
+    <polyline points="9 5 12 2 15 5" />
+    <polyline points="15 19 12 22 9 19" />
+    <polyline points="19 9 22 12 19 15" />
+    <line x1="2" x2="22" y1="12" y2="12" />
+    <line x1="12" x2="12" y1="2" y2="22" />
+  </svg>
+);
+
+// Paints the spread: others' committed ink first, then (on my spread) my live
+// editable ink + text. Strokes are normalized 0..1 across the whole spread;
+// quadratic-midpoint smoothing keeps marker lines from looking like polylines.
 function paint(
   canvas: HTMLCanvasElement,
   others: Signature[],
@@ -93,22 +119,22 @@ function paint(
   }
 }
 
-type JournalPageProps = {
-  pageIndex: number;
-  side: "left" | "right";
+type JournalSpreadProps = {
+  spreadIndex: number;
   others: Signature[];
   mine: { strokes: Stroke[]; text: SignatureText | null } | null;
   editable: boolean;
   tool: Tool;
   color: string;
-  onCommitStroke: (pageIndex: number, stroke: Stroke) => void;
-  onErase: (pageIndex: number, point: Point) => void;
+  onCommitStroke: (stroke: Stroke) => void;
+  onErase: (point: Point) => void;
   onMoveBy: (dx: number, dy: number) => void;
 };
 
-function JournalPage({
-  pageIndex,
-  side,
+// One open spread: two paper pages as visual backdrop, and a SINGLE canvas
+// laid over both so ink and drags flow across the gutter with no barrier.
+function JournalSpread({
+  spreadIndex,
   others,
   mine,
   editable,
@@ -117,7 +143,7 @@ function JournalPage({
   onCommitStroke,
   onErase,
   onMoveBy,
-}: JournalPageProps) {
+}: JournalSpreadProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const activeStroke = useRef<Stroke | null>(null);
   const lastMove = useRef<Point | null>(null);
@@ -138,6 +164,7 @@ function JournalPage({
     return () => observer.disconnect();
   }, [redraw]);
 
+  // Map pointer position to 0..1 across the WHOLE spread (both pages).
   const toNorm = (event: React.PointerEvent): Point => {
     const rect = canvasRef.current!.getBoundingClientRect();
     return {
@@ -154,7 +181,7 @@ function JournalPage({
       activeStroke.current = { color, points: [p] };
       setTick((t) => t + 1);
     } else if (tool === "eraser") {
-      onErase(pageIndex, p);
+      onErase(p);
     } else {
       lastMove.current = p;
     }
@@ -173,7 +200,7 @@ function JournalPage({
     } else if (tool === "eraser") {
       // Only erase while the pointer is held (a button is pressed).
       if (event.buttons === 0) return;
-      onErase(pageIndex, p);
+      onErase(p);
     } else {
       if (!lastMove.current) return;
       onMoveBy(p.x - lastMove.current.x, p.y - lastMove.current.y);
@@ -185,25 +212,37 @@ function JournalPage({
     lastMove.current = null;
     const stroke = activeStroke.current;
     activeStroke.current = null;
-    if (stroke && stroke.points.length > 1) onCommitStroke(pageIndex, stroke);
+    if (stroke && stroke.points.length > 1) onCommitStroke(stroke);
     else redraw();
   };
 
   const cursor =
     !editable ? "default" : tool === "move" ? "grab" : tool === "eraser" ? "cell" : "crosshair";
 
+  const leftPage = spreadIndex * 2;
+
   return (
-    <div className={`${styles.page} ${side === "left" ? styles.pageLeft : styles.pageRight}`}>
+    <div className={styles.book}>
+      {/* Visual pages (paper, ruled lines, gutter shadows, page numbers). */}
+      <div className={`${styles.page} ${styles.pageLeft}`}>
+        <span className={styles.pageNumber}>{leftPage + 1}</span>
+      </div>
+      <div className={`${styles.page} ${styles.pageRight}`}>
+        <span className={styles.pageNumber}>{leftPage + 2}</span>
+      </div>
+
+      {/* One continuous drawing surface spanning both pages. */}
       <canvas
         ref={canvasRef}
-        className={styles.pageCanvas}
+        className={styles.spreadCanvas}
         style={{ cursor }}
-        aria-label={`Journal page ${pageIndex + 1}${editable ? ". Draw here with the pointer to sign." : ""}`}
+        aria-label={`Journal spread, pages ${leftPage + 1} and ${leftPage + 2}${editable ? ". Draw here with the pointer to sign." : ""}`}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
         onPointerCancel={handlePointerUp}
       />
+
       {/* Others' linked signatures: hover shows a tooltip, click opens X. */}
       {others
         .filter((s) => s.xHandle)
@@ -231,15 +270,14 @@ function JournalPage({
             </a>
           );
         })}
-      <span className={styles.pageNumber}>{pageIndex + 1}</span>
     </div>
   );
 }
 
 // The book on the desk, frameless: the opened journal floating over the
 // dimmed room, markers beside it. You own ONE signature — draw it, rub out
-// pieces with the eraser, drag it anywhere on its page, relink or clear it.
-// Everyone else's marks are read-only; hover to see who, click to visit.
+// pieces with the eraser, drag it anywhere across BOTH pages, relink or clear
+// it. Everyone else's marks are read-only; hover to see who, click to visit.
 export default function GuestbookOverlay({ open, onClose }: GuestbookOverlayProps) {
   return <AnimatePresence>{open ? <GuestbookPanel onClose={onClose} /> : null}</AnimatePresence>;
 }
@@ -267,26 +305,22 @@ function GuestbookPanel({ onClose }: { onClose: () => void }) {
     strokes: initialMine?.strokes ?? [],
     text: initialMine?.text ?? null,
   });
-  const [myPage, setMyPage] = useState<number | null>(initialMine?.page ?? null);
+  const [mySpread, setMySpread] = useState<number | null>(initialMine?.spread ?? null);
   const [color, setColor] = useState(MARKER_COLORS[0].value);
   const [xHandle, setXHandle] = useState(initialMine ? (initialMine.xHandle ? `@${initialMine.xHandle}` : "") : "");
   const [tool, setTool] = useState<Tool>("marker");
-  const [typedName, setTypedName] = useState("");
-  const [showTyped, setShowTyped] = useState(false);
+  const [typedName, setTypedName] = useState(initialMine?.text?.value ?? "");
+  const [showTyped, setShowTyped] = useState(!!initialMine?.text);
   const [confirmClear, setConfirmClear] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
 
   const hasInk = mine.strokes.length > 0 || !!mine.text;
 
-  const totalPages = pageCount(signatures);
-  const totalSpreads = Math.ceil(totalPages / 2);
-  // Open to my signature's spread if I have one, else the freshest (blank) one.
-  const [spread, setSpread] = useState(() => {
-    const mine = getMySignature();
-    if (mine) return Math.floor(mine.page / 2);
-    return Math.ceil(pageCount(getSignatures()) / 2) - 1;
-  });
+  const totalSpreads = spreadCount(signatures);
+  const totalPages = totalSpreads * 2;
+  // Open to my signature's spread if I have one, else the front of the book.
+  const [spread, setSpread] = useState(() => initialMine?.spread ?? 0);
   const leftPage = spread * 2;
   const rightPage = leftPage + 1;
 
@@ -319,20 +353,45 @@ function GuestbookPanel({ onClose }: { onClose: () => void }) {
     };
   }, [onClose]);
 
-  const commitStroke = useCallback((pageIndex: number, stroke: Stroke) => {
-    setMyPage((prev) => prev ?? pageIndex); // first stroke claims a page
+  const commitStroke = useCallback((stroke: Stroke) => {
+    setMySpread((prev) => prev ?? spread); // first stroke claims the open spread
     setMine((prev) => ({ ...prev, strokes: [...prev.strokes, stroke] }));
     setStatus(null);
     setConfirmClear(false);
-  }, []);
+  }, [spread]);
 
-  const erase = useCallback((_pageIndex: number, point: Point) => {
+  const erase = useCallback((point: Point) => {
     setMine((prev) => ({ ...prev, strokes: eraseAt(prev.strokes, point, ERASER_RADIUS) }));
   }, []);
 
   const moveBy = useCallback((dx: number, dy: number) => {
     setMine((prev) => translateSignature(prev.strokes, prev.text, dx, dy));
   }, []);
+
+  // Live typed-name preview: as you type, the name appears in the book right
+  // away in the selected color and handwritten font. Keeps its position if it
+  // already has one (so it can be dragged), else lands centered on the spread.
+  const handleTypedChange = (value: string) => {
+    setTypedName(value);
+    const trimmed = value.trim();
+    setMine((prev) => {
+      if (!trimmed) return { ...prev, text: null };
+      return {
+        ...prev,
+        text: { value: trimmed, x: prev.text?.x ?? 0.5, y: prev.text?.y ?? 0.5, color },
+      };
+    });
+    if (trimmed) setMySpread((prev) => prev ?? spread);
+    setStatus(null);
+    setConfirmClear(false);
+  };
+
+  const chooseColor = (value: string) => {
+    setColor(value);
+    setTool("marker");
+    // Recolor a live typed name so it always matches the selected marker.
+    setMine((prev) => (prev.text ? { ...prev, text: { ...prev.text, color: value } } : prev));
+  };
 
   const undo = () => {
     setMine((prev) => ({ ...prev, strokes: prev.strokes.slice(0, -1) }));
@@ -345,8 +404,10 @@ function GuestbookPanel({ onClose }: { onClose: () => void }) {
       return;
     }
     setMine({ strokes: [], text: null });
-    setMyPage(null);
+    setMySpread(null);
     setXHandle("");
+    setTypedName("");
+    setShowTyped(false);
     clearMySignature();
     setConfirmClear(false);
     setVersion((v) => v + 1);
@@ -356,29 +417,25 @@ function GuestbookPanel({ onClose }: { onClose: () => void }) {
 
   const save = () => {
     setError(null);
-    let page = myPage;
-    let text = mine.text;
-
-    // Typed-name fallback: place it in open space on the visible spread.
-    if (!hasInk && typedName.trim()) {
-      page = leftPage;
-      text = { value: typedName, x: 0.3 + Math.random() * 0.4, y: 0.3 + Math.random() * 0.4, color };
-    }
-    if (page === null) {
+    if (mySpread === null) {
       setError("Draw your name on a page first — or type it instead.");
       return;
     }
 
-    const result = saveMySignature({ page, strokes: mine.strokes, text: text ?? undefined, xHandle });
+    const result = saveMySignature({
+      spread: mySpread,
+      strokes: mine.strokes,
+      text: mine.text ?? undefined,
+      xHandle,
+    });
     if (!result.ok) {
       setError(result.error);
       return;
     }
     // Adopt the normalized/saved copy back into the working state.
     setMine({ strokes: result.signature.strokes, text: result.signature.text ?? null });
-    setMyPage(result.signature.page);
-    setTypedName("");
-    setShowTyped(false);
+    setMySpread(result.signature.spread);
+    setTypedName(result.signature.text?.value ?? "");
     markFound("guestbook-sign");
     setVersion((v) => v + 1);
     setStatus(
@@ -388,25 +445,24 @@ function GuestbookPanel({ onClose }: { onClose: () => void }) {
     );
   };
 
-  // A page is editable if it's my signature's page, or (before I've drawn
-  // anything) whichever page I start drawing on.
-  const editablePage = (index: number) => myPage === null || myPage === index;
-  const mineFor = (index: number) => (myPage === index ? mine : null);
-  const othersFor = (index: number) =>
-    signatures.filter((s) => s.id !== myId && s.page === index);
+  // A spread is editable if it's my signature's spread, or (before I've drawn
+  // anything) whichever spread is open when I start.
+  const editable = mySpread === null || mySpread === spread;
+  const mineForSpread = mySpread === spread ? mine : null;
+  const othersForSpread = signatures.filter((s) => s.id !== myId && s.spread === spread);
 
-  const toolButton = (value: Tool, label: string, glyph: string) => (
+  const toolButton = (value: Tool, label: string, icon: ReactNode) => (
     <button
       type="button"
       onClick={() => setTool(value)}
       aria-pressed={tool === value}
       aria-label={label}
       title={label}
-      className={`flex h-9 min-w-9 items-center justify-center rounded-lg px-2 text-[15px] ${
+      className={`flex h-9 min-w-9 items-center justify-center rounded-lg px-2 ${
         tool === value ? "bg-[var(--accent)] text-[var(--accent-fg)]" : "text-white/85 hover:bg-white/10"
       } focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]`}
     >
-      {glyph}
+      {icon}
     </button>
   );
 
@@ -453,38 +509,23 @@ function GuestbookPanel({ onClose }: { onClose: () => void }) {
         </button>
 
         <div className="flex min-w-0 flex-1 flex-col items-center gap-2">
-          <div className={styles.book}>
-            <JournalPage
-              pageIndex={leftPage}
-              side="left"
-              others={othersFor(leftPage)}
-              mine={mineFor(leftPage)}
-              editable={editablePage(leftPage)}
-              tool={tool}
-              color={color}
-              onCommitStroke={commitStroke}
-              onErase={erase}
-              onMoveBy={moveBy}
-            />
-            <JournalPage
-              pageIndex={rightPage}
-              side="right"
-              others={othersFor(rightPage)}
-              mine={mineFor(rightPage)}
-              editable={editablePage(rightPage)}
-              tool={tool}
-              color={color}
-              onCommitStroke={commitStroke}
-              onErase={erase}
-              onMoveBy={moveBy}
-            />
-          </div>
+          <JournalSpread
+            spreadIndex={spread}
+            others={othersForSpread}
+            mine={mineForSpread}
+            editable={editable}
+            tool={tool}
+            color={color}
+            onCommitStroke={commitStroke}
+            onErase={erase}
+            onMoveBy={moveBy}
+          />
 
           {/* Tool + action strip */}
           <div className="flex flex-wrap items-center justify-center gap-1.5 rounded-2xl bg-black/45 px-3 py-1.5">
-            {toolButton("marker", "Marker", "✒︎")}
-            {toolButton("eraser", "Eraser", "⌫")}
-            {toolButton("move", "Move signature", "✥")}
+            {toolButton("marker", "Pen", <PenIcon />)}
+            {toolButton("eraser", "Eraser", <EraserIcon />)}
+            {toolButton("move", "Move signature", <MoveIcon />)}
             <span className="mx-1 h-5 w-px bg-white/20" aria-hidden="true" />
             <button
               type="button"
@@ -505,7 +546,7 @@ function GuestbookPanel({ onClose }: { onClose: () => void }) {
             <button
               type="button"
               onClick={save}
-              disabled={!hasInk && !typedName.trim()}
+              disabled={!hasInk}
               className="min-h-9 rounded-lg bg-[var(--accent)] px-4 text-[13px] font-medium text-[var(--accent-fg)] disabled:opacity-40 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
             >
               {myId ? "Save changes" : "Sign the book"}
@@ -534,7 +575,7 @@ function GuestbookPanel({ onClose }: { onClose: () => void }) {
                 type="text"
                 maxLength={40}
                 value={typedName}
-                onChange={(e) => setTypedName(e.target.value)}
+                onChange={(e) => handleTypedChange(e.target.value)}
                 placeholder="Type your name"
                 aria-label="Type your name instead of drawing"
                 className="min-h-9 w-36 rounded-lg border border-white/25 bg-white/10 px-2.5 text-[14px] text-white outline-none placeholder:text-white/40 focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
@@ -585,10 +626,7 @@ function GuestbookPanel({ onClose }: { onClose: () => void }) {
               role="radio"
               aria-checked={color === marker.value}
               aria-label={`${marker.name} marker`}
-              onClick={() => {
-                setColor(marker.value);
-                setTool("marker");
-              }}
+              onClick={() => chooseColor(marker.value)}
               className={`${styles.swatch} ${color === marker.value ? styles.swatchSelected : ""}`}
               style={{ background: marker.value }}
             />

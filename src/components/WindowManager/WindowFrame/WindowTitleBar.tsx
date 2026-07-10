@@ -19,10 +19,11 @@ type TrafficLightProps = {
   onClick: () => void;
 };
 
-// A macOS-style traffic-light control: a small colored dot inside a generous
-// 44×44 hit target (per the project's touch-target rule). The glyph fades in
-// on hover/focus of the group so the affordance stays legible without cluttering
-// the resting state.
+// A macOS-style traffic-light control: a small colored dot in a hit target that
+// stays a full 44px tall (the title-bar height, so it's easy to hit) but only as
+// wide as the dot, so the three cluster tightly like real traffic lights. The
+// glyph fades in on hover/focus of the group so the affordance stays legible
+// without cluttering the resting state.
 function TrafficLight({ color, glyph, label, onClick }: TrafficLightProps) {
   return (
     <button
@@ -30,7 +31,7 @@ function TrafficLight({ color, glyph, label, onClick }: TrafficLightProps) {
       onPointerDown={(event) => event.stopPropagation()}
       onClick={onClick}
       aria-label={label}
-      className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
+      className="flex h-11 w-[13px] shrink-0 items-center justify-center rounded-full focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
     >
       <span
         aria-hidden="true"
@@ -67,7 +68,7 @@ export default function WindowTitleBar({
       }}
     >
       {/* group: hovering anywhere over the cluster reveals the glyphs, matching macOS */}
-      <div className="group flex shrink-0 items-center">
+      <div className="group flex shrink-0 items-center gap-2 px-1">
         <TrafficLight color="var(--tl-close)" glyph="×" label={`Close ${title}`} onClick={onClose} />
         <TrafficLight color="var(--tl-min)" glyph="–" label={`Minimize ${title}`} onClick={onMinimize} />
         <TrafficLight color="var(--tl-zoom)" glyph="+" label={`Zoom ${title}`} onClick={onZoom} />
