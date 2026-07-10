@@ -16,11 +16,13 @@ type PenToolProps = {
   value: NotepadShape;
   onChange: (next: NotepadShape) => void;
   onReset: () => void;
+  // What's being traced, for the panel copy (e.g. "note", "journal").
+  subject?: string;
 };
 
 const CLOSE_DIST = 12; // px: clicking this close to the first point closes the shape
 
-export default function PenTool({ value, onChange, onReset }: PenToolProps) {
+export default function PenTool({ value, onChange, onReset, subject = "note" }: PenToolProps) {
   // In-progress vertices in screen space (CSS px). Empty = not currently drawing.
   const [draft, setDraft] = useState<Array<[number, number]>>([]);
   const [copied, setCopied] = useState(false);
@@ -101,11 +103,11 @@ export default function PenTool({ value, onChange, onReset }: PenToolProps) {
         className="pointer-events-auto fixed top-4 left-4 z-50 w-72 rounded-lg border border-white/15 bg-black/85 p-4 font-mono text-[12px] text-white shadow-2xl"
         onClick={(e) => e.stopPropagation()}
         role="group"
-        aria-label="Pen tool: trace the sticky note"
+        aria-label={`Pen tool: trace the ${subject}`}
       >
-        <div className="mb-2 text-[13px] font-semibold">Pen tool — trace the note</div>
+        <div className="mb-2 text-[13px] font-semibold">Pen tool — trace the {subject}</div>
         <p className="mb-3 leading-snug text-white/70">
-          Click to drop points around the sticky note&apos;s outline. Click the first point again (or
+          Click to drop points around the {subject}&apos;s outline. Click the first point again (or
           &ldquo;Finish&rdquo;) to close it. The magenta shape becomes your outline.
         </p>
         <div className="mb-3 text-white/60">Points placed: {draft.length}</div>

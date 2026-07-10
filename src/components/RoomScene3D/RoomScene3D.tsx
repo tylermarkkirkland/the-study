@@ -125,6 +125,35 @@ const NOTEPAD_SHAPE: NotepadShape = {
   ],
 };
 
+// The journal's hover/click outline — same flat-polygon approach as the sticky
+// note, because the folio lies flat and angled on the desk (a box or AABB spills
+// onto the desk around it). Traced with the pen tool (?tunejournal). Default is a
+// rough quad around the folio; retrace to hug it. points are world [x, z] at
+// y = planeY. (The glow still traces the real 3D mesh — this is hover only.)
+const JOURNAL_SHAPE: NotepadShape = {
+  planeY: 0.8,
+  points: [
+    [-0.434, 0.034],
+    [-0.299, -0.046],
+    [-0.329, -0.111],
+    [-0.308, -0.127],
+    [-0.304, -0.181],
+    [-0.32, -0.216],
+    [-0.329, -0.172],
+    [-0.344, -0.136],
+    [-0.4, -0.243],
+    [-0.403, -0.222],
+    [-0.418, -0.254],
+    [-0.574, -0.251],
+    [-0.53, -0.147],
+    [-0.601, -0.157],
+    [-0.653, -0.083],
+    [-0.608, 0.003],
+    [-0.55, 0.078],
+    [-0.49, 0.028],
+  ],
+};
+
 // Hand-built in Blender by the user: metal office desk, LG monitor/keyboard/
 // mouse, chair, shelf, radio, guitar, and desk clutter. Exported at 519MB and
 // packed down to ~10.5MB with `gltf-transform optimize --compress draco
@@ -139,7 +168,9 @@ type OfficeSceneProps = {
   stickyOpen: boolean;
   onOpenSticky: () => void;
   notepadShape: NotepadShape;
+  journalShape: NotepadShape;
   debugBox: boolean;
+  debugJournal: boolean;
 };
 
 function OfficeScene({
@@ -150,7 +181,9 @@ function OfficeScene({
   stickyOpen,
   onOpenSticky,
   notepadShape,
+  journalShape,
   debugBox,
+  debugJournal,
 }: OfficeSceneProps) {
   const { scene } = useGLTF("/models/office.glb");
   const hotspotNodes = useHotspotNodes(scene);
@@ -196,8 +229,8 @@ function OfficeScene({
 
   // The journal is a flat portfolio lying on the desk, nearly coplanar with the desk surface. Seen
   // at the scene's grazing camera angle, ray hits on its thin top faces are interleaved with hits
-  // on the desk right behind them, so raw mesh-hover only lit up a small central patch. An
-  // invisible box standing just above the notebook's footprint gives R3F a single, unambiguous
+  // on the desk right behind them, so raw mesh-hover only lit up a small central patch. A traced
+  // flat polygon (JOURNAL_SHAPE) laid just above the desk gives R3F a single, unambiguous
   // closest-hit across the whole object (the desk can't win in front of it), so hover — and the
   // resulting glow of the real binder mesh — covers the entire notebook. Volumetric props (radio,
   // guitar) face the camera and don't need this.
@@ -295,44 +328,21 @@ function OfficeScene({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [glowKey, hotspotNodes, notepadProxyMesh]);
 
-  // Invisible hit-proxy for the journal (see setJournalHovered): a box standing on the desk over
-  // the notebook's world footprint, so the whole notebook is hoverable/clickable despite the flat
-  // mesh losing the depth race to the desk at a grazing angle.
-  const journalProxy = useMemo(() => {
-    const nodes = hotspotNodes.journal;
-    if (!nodes || nodes.length === 0) return null;
-    const node = nodes[0] as THREE.Mesh;
-    const geom = node.geometry as THREE.BufferGeometry | undefined;
-    if (!geom) return null;
-    geom.computeBoundingBox();
-    const lb = geom.boundingBox;
-    if (!lb) return null;
-    // The journal lies flat but rotated on the desk, so an axis-aligned box
-    // overhangs its corners. Build an ORIENTED box from the notebook's own local
-    // bounding box + world transform, so the hit area hugs the folio exactly.
-    const localSize = lb.getSize(new THREE.Vector3());
-    const localCenter = lb.getCenter(new THREE.Vector3());
-    node.updateWorldMatrix(true, false);
-    const pos = new THREE.Vector3();
-    const quat = new THREE.Quaternion();
-    const scl = new THREE.Vector3();
-    node.matrixWorld.decompose(pos, quat, scl);
-    const worldCenter = localCenter.applyMatrix4(node.matrixWorld);
-    // Thicken whichever axis is the folio's flat normal so the box stands a little
-    // proud of the desk and wins the raycast depth race, without ballooning.
-    const dims: [number, number, number] = [
-      localSize.x * scl.x,
-      localSize.y * scl.y,
-      localSize.z * scl.z,
-    ];
-    const thinAxis = dims.indexOf(Math.min(...dims));
-    dims[thinAxis] = Math.max(dims[thinAxis], 0.05);
-    return {
-      position: worldCenter.toArray() as [number, number, number],
-      quaternion: [quat.x, quat.y, quat.z, quat.w] as [number, number, number, number],
-      args: dims,
-    };
-  }, [hotspotNodes]);
+  // Flat hit-proxy polygon for the journal, laid on the desk plane from the traced
+  // JOURNAL_SHAPE — same approach as the sticky note. The folio lies flat and
+  // angled, so a box/AABB overhangs it; a traced polygon hugs it exactly. Hover
+  // only — the glow still traces the real 3D mesh.
+  const journalGeometry = useMemo(() => {
+    const shape = new THREE.Shape();
+    journalShape.points.forEach(([x, z], i) => {
+      if (i === 0) shape.moveTo(x, -z);
+      else shape.lineTo(x, -z);
+    });
+    const geom = new THREE.ShapeGeometry(shape);
+    geom.rotateX(-Math.PI / 2);
+    geom.translate(0, journalShape.planeY, 0);
+    return geom;
+  }, [journalShape]);
 
   // Flat polygon geometry for the sticky-note outline, laid on the desk plane.
   // Built from the traced (x, z) points: a Shape in XY, rotated flat and lifted
@@ -411,24 +421,26 @@ function OfficeScene({
         )}
       </mesh>
 
-      {journalProxy ? (
-        <mesh
-          position={journalProxy.position}
-          quaternion={journalProxy.quaternion}
-          onPointerOver={(event) => {
-            event.stopPropagation();
-            setJournalHovered(true);
-          }}
-          onPointerOut={() => setJournalHovered(false)}
-          onClick={(event) => {
-            event.stopPropagation();
-            onOpenJournal();
-          }}
-        >
-          <boxGeometry args={journalProxy.args} />
-          <meshBasicMaterial transparent opacity={0} depthWrite={false} />
-        </mesh>
-      ) : null}
+      <mesh
+        geometry={journalGeometry}
+        onPointerOver={(event) => {
+          event.stopPropagation();
+          setJournalHovered(true);
+        }}
+        onPointerOut={() => setJournalHovered(false)}
+        onClick={(event) => {
+          event.stopPropagation();
+          onOpenJournal();
+        }}
+      >
+        {/* Invisible in normal use (hover/click only — the glow uses the real
+            mesh). Magenta + always-on-top while tracing (?tunejournal). */}
+        {debugJournal ? (
+          <meshBasicMaterial color="#ff00ff" side={THREE.DoubleSide} transparent opacity={0.6} depthTest={false} />
+        ) : (
+          <meshBasicMaterial side={THREE.DoubleSide} transparent opacity={0} depthWrite={false} />
+        )}
+      </mesh>
 
       {/* xRay draws the outline even where the object is occluded in the depth buffer. It's needed
           for the journal: it lies flat and flush on the desk, so the outline pass reads its
@@ -709,7 +721,9 @@ export default function RoomScene3D() {
   // re-traceable (and shown magenta) via the pen tool when the URL has ?tune.
   // Read once on mount to avoid useSearchParams' Suspense requirement.
   const [notepadShape, setNotepadShape] = useState<NotepadShape>(NOTEPAD_SHAPE);
+  const [journalShape, setJournalShape] = useState<NotepadShape>(JOURNAL_SHAPE);
   const [tuning, setTuning] = useState(false);
+  const [tuningJournal, setTuningJournal] = useState(false);
   // Live screen-bezel tuning, gated behind ?bezel (independent of the pen tool).
   const [bezel, setBezel] = useState<Bezel>(DEFAULT_BEZEL);
   const [tuningBezel, setTuningBezel] = useState(false);
@@ -717,6 +731,7 @@ export default function RoomScene3D() {
     const params = new URLSearchParams(window.location.search);
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setTuning(params.has("tune"));
+    setTuningJournal(params.has("tunejournal"));
     setTuningBezel(params.has("bezel"));
   }, []);
 
@@ -740,7 +755,9 @@ export default function RoomScene3D() {
               stickyOpen={stickyOpen}
               onOpenSticky={() => setStickyOpen(true)}
               notepadShape={notepadShape}
+              journalShape={journalShape}
               debugBox={tuning}
+              debugJournal={tuningJournal}
             />
           </Suspense>
 
@@ -758,6 +775,15 @@ export default function RoomScene3D() {
           value={notepadShape}
           onChange={setNotepadShape}
           onReset={() => setNotepadShape(NOTEPAD_SHAPE)}
+        />
+      ) : null}
+
+      {tuningJournal ? (
+        <PenTool
+          value={journalShape}
+          onChange={setJournalShape}
+          onReset={() => setJournalShape(JOURNAL_SHAPE)}
+          subject="journal"
         />
       ) : null}
 
