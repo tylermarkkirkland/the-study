@@ -254,7 +254,8 @@ const COMMANDS: Record<string, Command> = {
         : [
             "Ha — no. There's one more secret on this machine,",
             "and it wouldn't be much of a secret if I just handed it over.",
-            "You'll want to find that one yourself. Your Notes have a hint.",
+            "You'll want to find that one yourself. Your Notes have a hint —",
+            "and if you're stuck, tap the ? next to it.",
           ],
   },
   // The master key — but it's locked. Running it drops into passcode-entry
@@ -269,6 +270,29 @@ const COMMANDS: Record<string, Command> = {
     },
   },
 };
+
+// Anyone who gets the "There is no spoon?" reference but guesses a different
+// word than `matrix` still solved it — these phrases all run `matrix`. Kept out
+// of COMMANDS so they never surface in help, tab-complete, or the hack reveal.
+// Matched against the whole input (lowercased, punctuation stripped), so
+// multi-word guesses like "there is no spoon" work too.
+const MATRIX_ALIASES = new Set([
+  "the matrix",
+  "there is no spoon",
+  "neo",
+  "wake up neo",
+  "knock knock neo",
+  "morpheus",
+  "trinity",
+  "agent smith",
+  "mr anderson",
+  "red pill",
+  "redpill",
+  "take the red pill",
+]);
+
+const normalizeGuess = (raw: string) =>
+  raw.toLowerCase().replace(/[^a-z0-9\s]/g, "").replace(/\s+/g, " ").trim();
 
 const WELCOME: Line[] = [
   { text: "The Study Terminal — type `help` to get your bearings.", kind: "output" },
@@ -337,7 +361,9 @@ export default function TerminalApp() {
     }
 
     const [name, ...args] = trimmed.split(/\s+/);
-    const command = COMMANDS[name.toLowerCase()];
+    const command = MATRIX_ALIASES.has(normalizeGuess(trimmed))
+      ? COMMANDS.matrix
+      : COMMANDS[name.toLowerCase()];
 
     // Remember every non-empty entry for ArrowUp/Down history.
     setHistory((prev) => [...prev, raw]);

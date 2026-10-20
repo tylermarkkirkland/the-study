@@ -1,6 +1,7 @@
 "use client";
 
-import { Fragment } from "react";
+import { Fragment, useState } from "react";
+import { AnimatePresence, motion } from "framer-motion";
 import { discoveries, COMPLETION_LINES } from "@/data/discoveries";
 import { useDiscoveries } from "@/lib/discovery/discoveryStore";
 
@@ -24,6 +25,18 @@ export default function NotebookApp() {
   const found = useDiscoveries();
   const foundCount = discoveries.filter((d) => found.has(d.id)).length;
   const allFound = foundCount === discoveries.length;
+  // Which clues have their extra hint open. Session-only on purpose — a fresh
+  // visit starts with every hint tucked away again.
+  const [openHints, setOpenHints] = useState<Set<string>>(() => new Set());
+
+  const toggleHint = (id: string) => {
+    setOpenHints((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
 
   return (
     <div className="flex h-full flex-col gap-3 overflow-y-auto p-5">
@@ -42,6 +55,7 @@ export default function NotebookApp() {
       <ul className="flex flex-col gap-3">
         {discoveries.map((d) => {
           const isFound = found.has(d.id);
+          const hintOpen = openHints.has(d.id);
           return (
             <li key={d.id} className="flex items-start gap-2.5 text-[15px] leading-relaxed">
               <span
@@ -61,10 +75,58 @@ export default function NotebookApp() {
                   {renderEmphasis(d.foundLabel)}
                 </span>
               ) : (
-                <span className="text-[var(--fg-muted)]">
-                  <span className="sr-only">Still a mystery: </span>
-                  {d.hidden ? "???" : renderEmphasis(d.hint)}
-                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-start gap-1">
+                    <span className="text-[var(--fg-muted)]">
+                      <span className="sr-only">Still a mystery: </span>
+                      {d.hidden ? "???" : renderEmphasis(d.hint)}
+                    </span>
+                    {d.extraHint && !d.hidden ? (
+                      // 44px hit area around a small visual circle; the negative
+                      // margins keep it from pushing the line height apart.
+                      <button
+                        type="button"
+                        onClick={() => toggleHint(d.id)}
+                        aria-expanded={hintOpen}
+                        aria-label={hintOpen ? "Hide the extra hint" : "Show an extra hint"}
+                        title={hintOpen ? "Hide hint" : "Need a hint?"}
+                        className="group -my-[10px] -mr-2 flex h-11 w-11 shrink-0 items-center justify-center rounded-full outline-none"
+                      >
+                        <span
+                          aria-hidden="true"
+                          className="flex h-[22px] w-[22px] items-center justify-center rounded-full border border-[var(--fg-muted)] text-[12px] font-bold text-[var(--fg-muted)] transition-colors group-hover:border-[var(--accent)] group-hover:text-[var(--accent)] group-focus-visible:outline group-focus-visible:outline-2 group-focus-visible:outline-offset-2 group-focus-visible:outline-[var(--accent)]"
+                          style={
+                            hintOpen
+                              ? { borderColor: "var(--accent)", color: "var(--accent)" }
+                              : undefined
+                          }
+                        >
+                          ?
+                        </span>
+                      </button>
+                    ) : null}
+                  </div>
+                  <AnimatePresence initial={false}>
+                    {hintOpen && d.extraHint ? (
+                      <motion.div
+                        key="hint"
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: "auto" }}
+                        exit={{ opacity: 0, height: 0 }}
+                        transition={{ duration: 0.2 }}
+                        className="overflow-hidden"
+                      >
+                        <p
+                          className="mt-1.5 border-l-2 pl-3 text-[14px] leading-relaxed text-[var(--fg)]"
+                          style={{ borderColor: "var(--accent)" }}
+                        >
+                          <span className="font-semibold">Hint: </span>
+                          {d.extraHint}
+                        </p>
+                      </motion.div>
+                    ) : null}
+                  </AnimatePresence>
+                </div>
               )}
             </li>
           );
