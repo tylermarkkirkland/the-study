@@ -10,10 +10,6 @@ export default function TrashApp() {
   const { openWindow } = useWindowManager();
   const items = desktopIcons.filter((icon) => trashedIds.includes(icon.id));
 
-  // The boring "files" default to the Trash; app icons only land here if dragged
-  // in. Show the drag hint until the user has actually trashed an app.
-  const hasTrashedApp = items.some((icon) => icon.appType !== "document");
-
   return (
     <div className="flex h-full flex-col gap-3 p-5 text-[var(--fg)]">
       <h2 className="text-lg font-semibold text-[var(--fg)]">Trash</h2>
@@ -58,16 +54,6 @@ export default function TrashApp() {
           );
         })}
       </ul>
-
-      {!hasTrashedApp ? (
-        <p className="text-sm text-[var(--fg-muted)]">
-          Drag an icon onto the Trash to move it here.
-        </p>
-      ) : null}
-
-      <p className="mt-auto text-sm text-[var(--fg-muted)]">
-        Items in the Trash are kept — nothing is permanently deleted.
-      </p>
     </div>
   );
 }
