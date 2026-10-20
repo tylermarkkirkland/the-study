@@ -7,20 +7,7 @@
 // action, never autoplay. To use a recorded sound instead, drop a file in
 // /public/sounds and swap the body for a decoded-buffer playback.
 
-let ctx: AudioContext | null = null;
-
-function getCtx(): AudioContext | null {
-  if (typeof window === "undefined") return null;
-  const Ctor =
-    window.AudioContext ??
-    (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-  if (!Ctor) return null;
-  if (!ctx) ctx = new Ctor();
-  // Browsers start the context suspended until a user gesture; resume is a no-op
-  // once it's running. Discoveries always follow a click, so this settles quickly.
-  if (ctx.state === "suspended") void ctx.resume();
-  return ctx;
-}
+import { getAudioContext } from "./audioContext";
 
 // Three quick ascending notes (an E-major triad) with a soft bell-ish envelope —
 // they overlap into a pleasant little arpeggio rather than three separate beeps.
@@ -30,7 +17,7 @@ const DECAY = 0.35; // per-note tail length
 const PEAK = 0.12; // gentle master volume (0–1)
 
 export function playDiscoveryChime(): void {
-  const audio = getCtx();
+  const audio = getAudioContext();
   if (!audio) return;
   try {
     const start = audio.currentTime + 0.02;

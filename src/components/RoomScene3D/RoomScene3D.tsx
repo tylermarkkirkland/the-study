@@ -736,7 +736,7 @@ export default function RoomScene3D() {
   }, []);
 
   return (
-    <div className="relative h-screen w-screen" style={{ background: "var(--bg)" }}>
+    <div className="relative h-dvh w-screen" style={{ background: "var(--bg)" }}>
       {/* `inert` while an overlay is open removes the room from tab order and AT
           exposure without unmounting it — same rendering, no dangling focus targets underneath
           a modal. */}

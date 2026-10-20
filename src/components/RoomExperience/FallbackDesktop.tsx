@@ -14,7 +14,7 @@ import OSDesktop from "@/components/OSDesktop/OSDesktop";
 export default function FallbackDesktop() {
   return (
     <main
-      className="relative h-screen w-screen overflow-hidden"
+      className="relative h-dvh w-screen overflow-hidden"
       style={{ background: "var(--bg)" }}
     >
       <OSDesktop />
