@@ -9,6 +9,8 @@
 // decoded buffer's RMS and applying a matching per-clip GainNode so no clip is jarringly louder
 // than another.
 
+import { getAudioContext as getSharedAudioContext } from "./audioContext";
+
 const BASE = "/sounds/radio";
 const AM = `${BASE}/am-tuning.mp3`;
 const TURRET = `${BASE}/turret-search.wav`;
@@ -82,18 +84,14 @@ function profileForSrc(src: string): OutputProfile {
   return PROFILES[PROFILE_BY_SRC[src] ?? FALLBACK_PROFILE];
 }
 
-let sharedAudioContext: AudioContext | null = null;
-
+// Plays through the room's shared AudioContext (see ./audioContext), which also
+// handles Safari's gesture unlock and "interrupted" state. Throws when Web Audio
+// is unavailable; every caller runs inside loadClip/playSegment's promise chain,
+// whose catch treats it as a missing clip.
 function getAudioContext(): AudioContext {
-  if (!sharedAudioContext) {
-    sharedAudioContext = new AudioContext();
-  }
-  // Browsers may create (or suspend) the context outside a user gesture; resume is a no-op if it's
-  // already running.
-  if (sharedAudioContext.state === "suspended") {
-    void sharedAudioContext.resume();
-  }
-  return sharedAudioContext;
+  const ctx = getSharedAudioContext();
+  if (!ctx) throw new Error("Web Audio is unavailable");
+  return ctx;
 }
 
 // The shared effect chain (master volume → band-limiting filters → stereo pan), built once per

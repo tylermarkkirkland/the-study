@@ -3,21 +3,23 @@
 // classic cheap-and-cheerful physical model that actually sounds like a
 // plucked string, not a beep. Each pluck renders offline into an AudioBuffer
 // (cached per frequency), so playback is just an AudioBufferSourceNode.
-// Follows radioPlayer.ts's pattern of one lazily-created shared AudioContext.
+// Plays through the room's shared AudioContext (see ./audioContext).
 
-let ctx: AudioContext | null = null;
+import { getAudioContext } from "./audioContext";
+
 let master: GainNode | null = null;
+let masterCtx: AudioContext | null = null;
 
-function ensureContext(): { ctx: AudioContext; master: GainNode } {
-  if (!ctx || ctx.state === "closed") {
-    ctx = new AudioContext();
+function ensureContext(): { ctx: AudioContext; master: GainNode } | null {
+  const ctx = getAudioContext();
+  if (!ctx) return null;
+  if (!master || masterCtx !== ctx) {
     master = ctx.createGain();
     master.gain.value = 0.5;
     master.connect(ctx.destination);
+    masterCtx = ctx;
   }
-  // Browsers suspend fresh contexts until a user gesture; plucks ARE gestures.
-  if (ctx.state === "suspended") void ctx.resume();
-  return { ctx, master: master! };
+  return { ctx, master };
 }
 
 const bufferCache = new Map<number, AudioBuffer>();
@@ -53,7 +55,9 @@ function renderPluck(audioCtx: AudioContext, frequency: number): AudioBuffer {
 
 /** Pluck a single string at the given frequency (Hz). */
 export function pluck(frequency: number) {
-  const { ctx: audioCtx, master: masterGain } = ensureContext();
+  const audio = ensureContext();
+  if (!audio) return;
+  const { ctx: audioCtx, master: masterGain } = audio;
   const source = audioCtx.createBufferSource();
   source.buffer = renderPluck(audioCtx, frequency);
   source.connect(masterGain);
@@ -62,7 +66,9 @@ export function pluck(frequency: number) {
 
 /** Strum a chord: pluck each frequency with a slight downstroke stagger. */
 export function strum(frequencies: number[], strokeMs = 45) {
-  const { ctx: audioCtx, master: masterGain } = ensureContext();
+  const audio = ensureContext();
+  if (!audio) return;
+  const { ctx: audioCtx, master: masterGain } = audio;
   frequencies.forEach((frequency, i) => {
     const source = audioCtx.createBufferSource();
     source.buffer = renderPluck(audioCtx, frequency);
