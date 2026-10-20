@@ -6,6 +6,9 @@ export type DiscoveryConfig = {
   foundLabel: string;
   // Hidden entries render as "???" until found — pure bait for completionists.
   hidden?: boolean;
+  // Optional nudge for the hardest clues. When set, Field Notes shows a small
+  // "?" button beside the hint that reveals this text on click.
+  extraHint?: string;
 };
 
 // The Field Notes checklist. Order is display order. Every id here must have a
@@ -37,11 +40,15 @@ export const discoveries: DiscoveryConfig[] = [
     hint: "I feel like someone tried to *hack* my computer.",
     foundLabel:
       "Cracked the passcode and ran hack in the terminal. Turns out the sticky note had the key all along.",
+    extraHint:
+      "Maybe I should ask the Terminal about it.",
   },
   {
     id: "terminal-matrix",
     hint: "There is no spoon?",
     foundLabel: "Ran matrix in the terminal. There is no spoon.",
+    extraHint:
+      "That's a movie line, right? My Terminal might know it.",
   },
   {
     id: "trash-file",
